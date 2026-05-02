@@ -62,7 +62,11 @@ fn main() {
     })
     .expect("failed to install Ctrl-C handler");
 
-    let dest = if args.unicast { "unicast" } else { args.group.as_str() };
+    let dest = if args.unicast {
+        "unicast"
+    } else {
+        args.group.as_str()
+    };
     let mode = if args.unicast { "unicast" } else { "multicast" };
     println!("{} target ← {dest} ({mode})", game_cfg.name);
 
