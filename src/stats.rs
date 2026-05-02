@@ -6,6 +6,7 @@ pub struct RelayStats {
     window_start: Instant,
     window_packets: u64,
     window_bytes: u64,
+    window_latency_us: u64,
     pub total_packets: u64,
     pub total_bytes: u64,
 }
@@ -16,14 +17,16 @@ impl RelayStats {
             window_start: Instant::now(),
             window_packets: 0,
             window_bytes: 0,
+            window_latency_us: 0,
             total_packets: 0,
             total_bytes: 0,
         }
     }
 
-    pub fn record(&mut self, bytes: usize) {
+    pub fn record(&mut self, bytes: usize, fwd_us: u64) {
         self.window_packets += 1;
         self.window_bytes += bytes as u64;
+        self.window_latency_us += fwd_us;
         self.total_packets += 1;
         self.total_bytes += bytes as u64;
     }
@@ -41,10 +44,14 @@ impl RelayStats {
             let pkt_s = self.window_packets as f64 / secs;
             let kb_s = self.window_bytes as f64 / 1024.0 / secs;
             let avg_b = self.window_bytes / self.window_packets;
-            println!("[{name}]  {pkt_s:.1} pkt/s   {kb_s:.1} KB/s   avg {avg_b} b/pkt");
+            let avg_fwd_us = self.window_latency_us / self.window_packets;
+            println!(
+                "[{name}]  {pkt_s:.1} pkt/s   {kb_s:.1} KB/s   avg {avg_b} b/pkt   {avg_fwd_us} \u{b5}s fwd"
+            );
         }
         self.window_packets = 0;
         self.window_bytes = 0;
+        self.window_latency_us = 0;
         self.window_start = Instant::now();
     }
 

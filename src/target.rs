@@ -100,21 +100,28 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
         }
 
         for recv in &mut receivers {
-            match recv.recv_socket.recv_from(&mut buf) {
-                Ok((len, _src)) => {
-                    let _ = recv.fwd_socket.send_to(&buf[..len], recv.forward_addr);
-                    recv.stats.record(len);
-                    if !recv.active {
-                        recv.active = true;
-                        println!(
-                            "[{}] traffic received \u{2192} {}",
-                            recv.def.name, recv.forward_addr
-                        );
+            loop {
+                match recv.recv_socket.recv_from(&mut buf) {
+                    Ok((len, _src)) => {
+                        let t0 = Instant::now();
+                        let _ = recv.fwd_socket.send_to(&buf[..len], recv.forward_addr);
+                        let fwd_us = t0.elapsed().as_micros() as u64;
+                        recv.stats.record(len, fwd_us);
+                        if !recv.active {
+                            recv.active = true;
+                            println!(
+                                "[{}] traffic received \u{2192} {}",
+                                recv.def.name, recv.forward_addr
+                            );
+                        }
+                        recv.last_packet = Some(Instant::now());
                     }
-                    recv.last_packet = Some(Instant::now());
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                    Err(e) => {
+                        eprintln!("[{}] recv error: {e}", recv.def.id);
+                        break;
+                    }
                 }
-                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-                Err(e) => eprintln!("[{}] recv error: {e}", recv.def.id),
             }
 
             if recv.active

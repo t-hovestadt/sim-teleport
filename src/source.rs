@@ -172,24 +172,31 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
                 continue;
             };
 
-            match socket.recv_from(&mut buf) {
-                Ok((len, _src)) => {
-                    let _ = socket.send_to(&buf[..len], relay.target_addr);
-                    if let Some(local) = relay.local_addr {
-                        let _ = socket.send_to(&buf[..len], local);
+            loop {
+                match socket.recv_from(&mut buf) {
+                    Ok((len, _src)) => {
+                        let t0 = Instant::now();
+                        let _ = socket.send_to(&buf[..len], relay.target_addr);
+                        if let Some(local) = relay.local_addr {
+                            let _ = socket.send_to(&buf[..len], local);
+                        }
+                        let fwd_us = t0.elapsed().as_micros() as u64;
+                        relay.stats.record(len, fwd_us);
+                        if !relay.active {
+                            relay.active = true;
+                            println!(
+                                "[{}] data flowing \u{2192} {}",
+                                relay.def.name, relay.target_addr
+                            );
+                        }
+                        relay.last_packet = Some(Instant::now());
                     }
-                    relay.stats.record(len);
-                    if !relay.active {
-                        relay.active = true;
-                        println!(
-                            "[{}] data flowing \u{2192} {}",
-                            relay.def.name, relay.target_addr
-                        );
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                    Err(e) => {
+                        eprintln!("[{}] recv error: {e}", relay.def.id);
+                        break;
                     }
-                    relay.last_packet = Some(Instant::now());
                 }
-                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-                Err(e) => eprintln!("[{}] recv error: {e}", relay.def.id),
             }
 
             if relay.active
