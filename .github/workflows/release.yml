@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows binary
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Rename binary
+        run: |
+          $version = "${{ github.ref_name }}"
+          $src = "target/x86_64-pc-windows-msvc/release/sim-relay.exe"
+          $dst = "sim-relay-$version-windows-x86_64.exe"
+          Move-Item $src $dst
+          echo "ASSET=$dst" >> $env:GITHUB_ENV
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
+          generate_release_notes: true
+          body: |
+            ## sim-relay ${{ github.ref_name }}
+
+            **Download:** `sim-relay-${{ github.ref_name }}-windows-x86_64.exe`
+
+            ### Quick start
+
+            **Gaming PC (source):**
+            ```
+            sim-relay source --target <SimHub-PC-IP>
+            ```
+
+            **SimHub PC (target — optional):**
+            ```
+            sim-relay target
+            ```
+
+            **List supported games:**
+            ```
+            sim-relay list
+            ```
+
+            See [README](https://github.com/t-hovestadt/sim-relay#readme) for full setup instructions.
