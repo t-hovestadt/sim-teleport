@@ -30,33 +30,40 @@ memory. sim-relay covers games that broadcast UDP telemetry natively.
 
 ## Download
 
-Pre-built Windows x64 binary is on the [Releases](../../releases/latest) page.
+Pre-built Windows x64 binaries are on the [Releases](../../releases/latest) page.
 
-| File | Use |
-|------|-----|
-| `sim-relay-vX.X.X-windows-x86_64.exe` | Both gaming PC (source) and SimHub PC (target) |
+| File | Machine |
+|------|---------|
+| `source-vX.X.X-windows-x86_64.exe` | Gaming PC |
+| `target-vX.X.X-windows-x86_64.exe` | SimHub PC |
+| `sim-relay-vX.X.X-windows-x86_64.exe` | Either (combined CLI: `sim-relay source` / `sim-relay target`) |
+
+Rename the downloaded files to `source.exe`, `target.exe`, and `sim-relay.exe` and place them in the same folder.
 
 ---
 
 ## Quick Start
 
-**Gaming PC (source):**
+**Gaming PC:**
 ```
-sim-relay.exe source --target <SimHub-PC-IP>
+source.exe --target <SimHub-PC-IP>
 ```
 Binds all supported game ports and forwards every packet to the target machine.
 
-**SimHub PC (target — optional):**
-
-SimHub listens on game ports natively. You only need sim-relay on the target if SimHub
-is configured for a different port or you want to remap:
+**SimHub PC (optional — only needed if SimHub is on a non-default port):**
 ```
-sim-relay.exe target
+target.exe
 ```
 
 **List supported games:**
 ```
 sim-relay.exe list
+```
+
+Both `source.exe` and `target.exe` are also available as subcommands of the combined `sim-relay.exe`:
+```
+sim-relay.exe source --target <IP>
+sim-relay.exe target
 ```
 
 **Direct Ethernet (192.168.50.1 → 192.168.50.2):** See the [Direct Ethernet setup](#direct-ethernet-setup) section.
@@ -216,21 +223,21 @@ Setting names vary by NIC manufacturer — look for equivalents if the exact nam
 
 **4. Bat files**
 
-`start-source-all.bat` on the **gaming PC** — place it next to `sim-relay.exe`:
+`start-source-all.bat` on the **gaming PC** — place it next to `source.exe`:
 
 ```batch
 @echo off
 cd /d "%~dp0"
-sim-relay.exe source --target 192.168.50.2 --all
+source.exe --target 192.168.50.2 --all
 pause
 ```
 
-`start-target-all.bat` on the **SimHub PC**:
+`start-target-all.bat` on the **SimHub PC** — place it next to `target.exe`:
 
 ```batch
 @echo off
 cd /d "%~dp0"
-sim-relay.exe target --all
+target.exe --all
 pause
 ```
 
@@ -266,7 +273,7 @@ sim-relay source also forwards each packet to `localhost:<port+1000>`. Configure
 source PC to listen on that offset port (e.g. pcars2 → 6606 instead of 5606).
 
 ```
-sim-relay.exe source --target 192.168.50.2 --all --local-forward
+source.exe --target 192.168.50.2 --all --local-forward
 ```
 
 **Option B — Run SimHub only on the target PC.** Cleanest setup.
@@ -280,7 +287,7 @@ binds a game's UDP port when that game's executable is detected, and releases th
 process disappears. This prevents port conflicts with other apps when the game isn't running.
 
 ```
-sim-relay.exe source --target 192.168.50.2 --all --auto-detect
+source.exe --target 192.168.50.2 --all --auto-detect
 ```
 
 Process detection is Windows-only. On other platforms `--auto-detect` has no effect — ports are

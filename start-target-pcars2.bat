@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-sim-relay.exe target --games pcars2
+target.exe --games pcars2
 pause

@@ -22,7 +22,15 @@ impl RelayStats {
             total_bytes: 0,
         }
     }
+}
 
+impl Default for RelayStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RelayStats {
     pub fn record(&mut self, bytes: usize, fwd_us: u64) {
         self.window_packets += 1;
         self.window_bytes += bytes as u64;

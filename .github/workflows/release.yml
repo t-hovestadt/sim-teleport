@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows binary
+    name: Build Windows binaries
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,42 +20,61 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Build release binary
+      - name: Build release binaries
         run: cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: Rename binary
+      - name: Rename binaries
         run: |
           $version = "${{ github.ref_name }}"
-          $src = "target/x86_64-pc-windows-msvc/release/sim-relay.exe"
-          $dst = "sim-relay-$version-windows-x86_64.exe"
-          Move-Item $src $dst
-          echo "ASSET=$dst" >> $env:GITHUB_ENV
+          $dir = "target/x86_64-pc-windows-msvc/release"
+
+          $files = @(
+            @{ src = "$dir/sim-relay.exe"; dst = "sim-relay-$version-windows-x86_64.exe" },
+            @{ src = "$dir/source.exe";    dst = "source-$version-windows-x86_64.exe" },
+            @{ src = "$dir/target.exe";    dst = "target-$version-windows-x86_64.exe" }
+          )
+
+          foreach ($f in $files) {
+            Move-Item $f.src $f.dst
+          }
+
+          $assets = ($files | ForEach-Object { $_.dst }) -join "`n"
+          echo "ASSETS=$assets" >> $env:GITHUB_ENV
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ASSET }}
+          files: |
+            sim-relay-${{ github.ref_name }}-windows-x86_64.exe
+            source-${{ github.ref_name }}-windows-x86_64.exe
+            target-${{ github.ref_name }}-windows-x86_64.exe
           generate_release_notes: true
           body: |
             ## sim-relay ${{ github.ref_name }}
 
-            **Download:** `sim-relay-${{ github.ref_name }}-windows-x86_64.exe`
+            **Downloads:**
+
+            | File | Machine |
+            |------|---------|
+            | `source-${{ github.ref_name }}-windows-x86_64.exe` | Gaming PC |
+            | `target-${{ github.ref_name }}-windows-x86_64.exe` | SimHub PC |
+            | `sim-relay-${{ github.ref_name }}-windows-x86_64.exe` | Either (combined CLI: `sim-relay source` / `sim-relay target`) |
 
             ### Quick start
 
-            **Gaming PC (source):**
+            **Gaming PC:**
             ```
-            sim-relay source --target <SimHub-PC-IP>
+            source.exe --target <SimHub-PC-IP>
             ```
 
-            **SimHub PC (target — optional):**
+            **SimHub PC (optional — only needed if SimHub is on a non-default port):**
             ```
-            sim-relay target
+            target.exe
             ```
 
             **List supported games:**
             ```
-            sim-relay list
+            sim-relay.exe list
             ```
 
             See [README](https://github.com/t-hovestadt/sim-relay#readme) for full setup instructions.

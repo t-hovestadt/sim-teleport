@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-sim-relay.exe target --all
+target.exe --all
 pause

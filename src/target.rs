@@ -3,18 +3,34 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use clap::Parser;
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::games::GameDef;
 use crate::platform::{boost_thread_priority, set_high_priority, HighResTimer};
 use crate::stats::RelayStats;
 
+/// Receive forwarded telemetry and relay to SimHub on this PC.
+#[derive(Parser)]
+#[command(name = "target", version, about)]
 pub struct Args {
+    /// Source PC IP address (informational only)
+    #[arg(long, value_name = "IP")]
     pub source: Option<String>,
+    /// Comma-separated game IDs to listen for (default: all)
+    #[arg(long, value_name = "ID,...", value_delimiter = ',')]
     pub games: Option<Vec<String>>,
+    /// Listen on all supported game ports
+    #[arg(long)]
     pub all: bool,
+    /// Override where to forward received packets (default: 127.0.0.1:<game_port>)
+    #[arg(long, value_name = "IP:PORT")]
     pub forward_to: Option<String>,
+    /// Set HIGH_PRIORITY_CLASS for this process
+    #[arg(long)]
     pub high_priority: bool,
+    /// Spin on recv instead of sleeping (lower latency, higher CPU)
+    #[arg(long)]
     pub busy_wait: bool,
 }
 

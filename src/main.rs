@@ -1,8 +1,4 @@
-mod games;
-mod platform;
-mod source;
-mod stats;
-mod target;
+use sim_relay::{games, source, target};
 
 use std::io;
 use std::sync::mpsc;

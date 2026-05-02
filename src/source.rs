@@ -3,19 +3,37 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use clap::Parser;
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::games::{Detection, GameDef};
 use crate::platform::{boost_thread_priority, is_process_running, set_high_priority, HighResTimer};
 use crate::stats::RelayStats;
 
+/// Capture game telemetry on this PC and forward to a target PC running SimHub.
+#[derive(Parser)]
+#[command(name = "source", version, about)]
 pub struct Args {
+    /// Target PC IP address
+    #[arg(long, value_name = "IP")]
     pub target: String,
+    /// Comma-separated game IDs to forward (default: all)
+    #[arg(long, value_name = "ID,...", value_delimiter = ',')]
     pub games: Option<Vec<String>>,
+    /// Forward all supported games
+    #[arg(long)]
     pub all: bool,
+    /// Also forward to localhost:<port+1000> for a local SimHub instance
+    #[arg(long)]
     pub local_forward: bool,
+    /// Bind address for listening sockets
+    #[arg(long, default_value = "0.0.0.0")]
     pub bind: String,
+    /// Set HIGH_PRIORITY_CLASS for this process
+    #[arg(long)]
     pub high_priority: bool,
+    /// Only bind ports when the game process is detected running
+    #[arg(long)]
     pub auto_detect: bool,
 }
 
