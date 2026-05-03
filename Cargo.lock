@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ac-teleport"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "ctrlc",
@@ -464,7 +464,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "sim-bridge"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "ac-teleport",
  "anyhow",
@@ -480,7 +480,7 @@ dependencies = [
 
 [[package]]
 name = "sim-relay"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clap",
  "ctrlc",
