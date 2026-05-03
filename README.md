@@ -308,10 +308,10 @@ map handles and re-enters the detection loop. The next game to start (same or di
 detected within 2 s and forwarding resumes with fresh compression buffers sized for that game.
 
 **Managed mode (under sim-bridge):** When sim-bridge launches ac-teleport with a specific game
-pre-selected, the disconnect timeout extends to 5 minutes. This keeps the connection alive while
-the game is on the menu or in a loading screen. sim-bridge sends an explicit shutdown signal
-when the game process exits, so the long timeout is only a safety net — normal transitions still
-happen promptly.
+pre-selected, the packetId-based timeout is disabled entirely. Source stays connected regardless
+of whether the game is in a session or on the menu — packetId of 0 just means no session is
+active, not that the game has closed. sim-bridge sends an explicit shutdown signal when the game
+process exits, which is the only thing that causes a disconnect.
 
 ### Dual maps on target
 
