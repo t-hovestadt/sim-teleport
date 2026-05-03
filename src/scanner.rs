@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::time::Duration;
 
 /// Snapshot of running process names, built once per scan cycle.
 /// All names are stored lowercased for case-insensitive matching.
@@ -66,4 +67,70 @@ impl ProcessScanner {
             CloseHandle(snapshot);
         }
     }
+}
+
+// ── AC shared-memory probing ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShmemDetection {
+    /// packetId advanced between two reads — game is in an active session.
+    Live,
+    /// Maps exist but packetId did not advance — game is on menu or maps are stale.
+    Stale,
+}
+
+pub struct AcProbeResult {
+    pub ac_evo: Option<ShmemDetection>,
+    pub ac1: Option<ShmemDetection>,
+}
+
+/// Probe both AC map families. Opens the physics map, reads packetId at T0,
+/// sleeps 100 ms, reads again at T1, then closes the handle.
+/// Returns `Live` if packetId changed, `Stale` if maps exist but packetId is static,
+/// `None` if maps don't exist.
+pub fn probe_ac_maps() -> AcProbeResult {
+    AcProbeResult {
+        ac_evo: probe_map("Local\\acevo_pmf_physics"),
+        ac1: probe_map("Local\\acpmf_physics"),
+    }
+}
+
+#[cfg(windows)]
+fn probe_map(name: &str) -> Option<ShmemDetection> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Memory::{
+        MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP_READ,
+    };
+
+    let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    let handle = unsafe { OpenFileMappingW(FILE_MAP_READ, 0, wide.as_ptr()) };
+    if handle == 0 {
+        return None;
+    }
+
+    let view = unsafe { MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 4) };
+    if view.Value.is_null() {
+        unsafe { CloseHandle(handle) };
+        return None;
+    }
+
+    let id0 = unsafe { std::ptr::read_volatile(view.Value as *const i32) };
+    std::thread::sleep(Duration::from_millis(100));
+    let id1 = unsafe { std::ptr::read_volatile(view.Value as *const i32) };
+
+    unsafe {
+        UnmapViewOfFile(view);
+        CloseHandle(handle);
+    }
+
+    if id1 != id0 {
+        Some(ShmemDetection::Live)
+    } else {
+        Some(ShmemDetection::Stale)
+    }
+}
+
+#[cfg(not(windows))]
+fn probe_map(_name: &str) -> Option<ShmemDetection> {
+    None
 }
