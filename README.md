@@ -199,6 +199,7 @@ BeamNG, Wreckfest 2, DiRT Rally 2.0, Euro/American Truck Simulator, and more.
 | `--no-relay` | Disable Sim Relay. |
 | `--scan-interval <SECS>` | How often to run the game detection cycle (default: 3 s). |
 | `--drain <SECS>` | Grace period to keep forwarding after a game closes (default: 20 s). |
+| `--verbose` | Print detailed detection results each scan cycle (probe outcomes, process matches). |
 
 ### `sim-bridge target [OPTIONS]`
 
@@ -292,6 +293,14 @@ default mode to register.
 | `advanced.reconnect_timeout_secs` | `10` | Seconds iRacing source waits for data before reconnecting. |
 | `advanced.ac_poll_rate` | `60` | AC Teleport source poll rate (Hz). |
 | `advanced.datagram_size` | `9000` | iRacing Teleport UDP datagram size in bytes. |
+| `simhub.path` | *(default install)* | Path to `SimHubWPF.exe`. Defaults to `C:\Program Files (x86)\SimHub\SimHubWPF.exe`. |
+| `simhub.iracing` | `"iRacing"` | SimHub game code passed to `-switchgame` when iRacing telemetry starts. |
+| `simhub.ac` | `"AssettoCorsa"` | SimHub game code passed to `-switchgame` when AC/EVO/ACC telemetry starts. |
+
+The `[simhub]` section is optional. When configured (or when `SimHubWPF.exe` exists at the
+default path), sim-bridge runs `SimHubWPF.exe -switchgame <code>` once when telemetry from a
+new game is first received on the target PC. Resets automatically when the stale timeout fires
+so the next session re-triggers the switch.
 
 The config file is looked up next to `sim-bridge.exe` first, then at
 `%APPDATA%\sim-bridge\sim-bridge.toml`. If neither exists, built-in defaults
