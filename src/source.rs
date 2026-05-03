@@ -14,6 +14,7 @@ enum ShmemGame {
     AcEvo,
     Ac1,
     Acc,
+    SimRelay { id: &'static str, name: &'static str },
 }
 
 struct Detection {
@@ -46,6 +47,23 @@ fn detect_shmem_game(scanner: &ProcessScanner, cfg: &Config) -> Option<Detection
                 game: ShmemGame::Acc,
                 label: "Assetto Corsa Competizione",
             });
+        }
+    }
+    // sim-relay UDP games (lowest priority — only when shmem games are absent)
+    if cfg.apps.sim_relay_enabled {
+        for game in sim_relay::games::GAMES {
+            if game.console {
+                continue;
+            }
+            if scanner.is_running(game.process_names) {
+                return Some(Detection {
+                    game: ShmemGame::SimRelay {
+                        id: game.id,
+                        name: game.name,
+                    },
+                    label: game.name,
+                });
+            }
         }
     }
     None
@@ -115,9 +133,6 @@ enum SlotState {
         since: Instant,
         handle: JoinHandle<()>,
         game: ShmemGame,
-    },
-    AlwaysOn {
-        handle: JoinHandle<()>,
     },
 }
 
@@ -238,46 +253,32 @@ impl AppSlot {
                         eprintln!("[{name}] AC Teleport: {e}");
                     }
                 }
+                ShmemGame::SimRelay { id, .. } => {
+                    if let Err(e) = sim_relay::source::run(
+                        sim_relay::SourceArgs {
+                            target: cfg.network.target_ip.clone(),
+                            games: Some(vec![id.to_string()]),
+                            // force_bind bypasses sim-relay's internal process detection;
+                            // sim-bridge owns detection and manages the lifecycle.
+                            force_bind: true,
+                            all: false,
+                            local_forward: false,
+                            bind: cfg.network.source_ip.clone(),
+                            high_priority: cfg.apps.high_priority,
+                            scan_interval: cfg.detection.scan_interval,
+                            grace_period: cfg.detection.drain_seconds,
+                            include_console: false,
+                        },
+                        rx,
+                    ) {
+                        eprintln!("[{name}] Sim Relay: {e}");
+                    }
+                }
             })
             .expect("failed to spawn shmem thread");
 
         log.log(&format!("[{label}] Detected — starting"));
         self.state = SlotState::Running { handle, game };
-    }
-
-    fn start_relay(&mut self, config: &Config, log: &Logger) {
-        let (tx, rx) = mpsc::channel::<()>();
-        self.shutdown_tx = Some(tx);
-        let cfg = config.clone();
-        let name = self.name;
-
-        let handle = std::thread::Builder::new()
-            .name(name.to_string())
-            .spawn(move || {
-                if let Err(e) = sim_relay::source::run(
-                    sim_relay::SourceArgs {
-                        target: cfg.network.target_ip.clone(),
-                        games: None,
-                        all: false,
-                        local_forward: false,
-                        // Bind to source_ip so outgoing packets have the right source
-                        // address for the target's firewall rules.
-                        bind: cfg.network.source_ip.clone(),
-                        high_priority: cfg.apps.high_priority,
-                        scan_interval: cfg.detection.scan_interval,
-                        grace_period: cfg.detection.drain_seconds,
-                        include_console: false,
-                        force_bind: false,
-                    },
-                    rx,
-                ) {
-                    eprintln!("[{name}] Sim Relay: {e}");
-                }
-            })
-            .expect("failed to spawn relay thread");
-
-        self.state = SlotState::AlwaysOn { handle };
-        log.log("[Sim Relay] Started (always-on, auto-detects UDP games)");
     }
 
     fn begin_drain(&mut self) {
@@ -308,9 +309,7 @@ impl AppSlot {
         }
         let state = std::mem::replace(&mut self.state, SlotState::Idle);
         match state {
-            SlotState::Running { handle, .. }
-            | SlotState::Draining { handle, .. }
-            | SlotState::AlwaysOn { handle } => {
+            SlotState::Running { handle, .. } | SlotState::Draining { handle, .. } => {
                 let deadline = Instant::now() + Duration::from_secs(5);
                 while !handle.is_finished() {
                     if Instant::now() >= deadline {
@@ -323,22 +322,6 @@ impl AppSlot {
                 let _ = handle.join();
             }
             SlotState::Idle => {}
-        }
-    }
-
-    fn ensure_relay_alive(&mut self, config: &Config, log: &Logger) {
-        let finished = match &self.state {
-            SlotState::AlwaysOn { handle } => handle.is_finished(),
-            _ => false,
-        };
-        if finished {
-            let old = std::mem::replace(&mut self.state, SlotState::Idle);
-            drop(old);
-            self.failures.record(log, self.name);
-            if self.failures.is_allowed() {
-                log.log("[Sim Relay] Restarting after crash...");
-                self.start_relay(config, log);
-            }
         }
     }
 
@@ -375,7 +358,6 @@ impl AppSlot {
             SlotState::Idle => "idle",
             SlotState::Running { .. } => "running",
             SlotState::Draining { .. } => "draining",
-            SlotState::AlwaysOn { .. } => "running",
         }
     }
 }
@@ -384,6 +366,7 @@ fn game_label(game: Option<ShmemGame>) -> &'static str {
     match game {
         Some(ShmemGame::Iracing) => "iRacing Teleport",
         Some(ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc) => "AC Teleport",
+        Some(ShmemGame::SimRelay { name, .. }) => name,
         None => "app",
     }
 }
@@ -430,12 +413,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     let mut scanner = ProcessScanner::new();
     let mut shmem = AppSlot::new("shmem");
-    let mut relay = AppSlot::new("Sim Relay");
     let mut last_heartbeat = Instant::now();
-
-    if config.apps.sim_relay_enabled {
-        relay.start_relay(&config, log);
-    }
 
     log.log(&format!(
         "Scanning for games every {}s...",
@@ -517,17 +495,12 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             _ => {}
         }
 
-        if config.apps.sim_relay_enabled {
-            relay.ensure_relay_alive(&config, log);
-        }
-
         // Periodic status heartbeat every 60s.
         if last_heartbeat.elapsed() >= heartbeat_interval {
-            let shmem_label = game_label(shmem.current_game());
-            let shmem_state = shmem.state_label();
-            let relay_state = relay.state_label();
             log.log(&format!(
-                "Status: shmem={shmem_label}/{shmem_state} relay={relay_state}"
+                "Status: {}/{}",
+                game_label(shmem.current_game()),
+                shmem.state_label()
             ));
             last_heartbeat = Instant::now();
         }
@@ -537,6 +510,5 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     log.log("Shutting down...");
     shmem.stop(log);
-    relay.stop(log);
     log.log("All apps stopped. Goodbye.");
 }
