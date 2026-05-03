@@ -1,4 +1,4 @@
-use sim_relay::games::select_games;
+use sim_relay::games::{select_games, GAMES};
 use sim_relay::platform::ProcessScanner;
 
 #[test]
@@ -76,4 +76,24 @@ fn process_scanner_is_running_case_insensitive() {
     // Querying with different casing should behave the same (not panic).
     let _ = scanner.is_running(&["SIM_RELAY_NONEXISTENT.EXE"]);
     let _ = scanner.is_running(&["sim_relay_nonexistent.exe"]);
+}
+
+#[test]
+fn game_ids_are_unique() {
+    use std::collections::HashSet;
+    let mut ids = HashSet::new();
+    for game in GAMES {
+        assert!(
+            ids.insert(game.id),
+            "duplicate game id in registry: {}",
+            game.id
+        );
+    }
+}
+
+#[test]
+fn all_ports_are_nonzero() {
+    for game in GAMES {
+        assert!(game.default_port > 0, "port 0 for game '{}'", game.id);
+    }
 }
