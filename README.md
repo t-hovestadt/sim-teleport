@@ -165,7 +165,7 @@ with exponential backoff.
 
 | Game | Detection method |
 |------|-----------------|
-| iRacing | Named event probe — `Local\IRSDKDataValidEvent` exists only while iRacing is running |
+| iRacing | Process name — `iRacingSim64DX11.exe` in running process list |
 | Assetto Corsa EVO | Shared-memory probe — `packetId` liveness check on `acevo_pmf_physics` |
 | Assetto Corsa | Shared-memory probe — `packetId` liveness check on `acpmf_physics` |
 | Assetto Corsa Competizione | Shared-memory probe — same as AC1, with `acc.exe` process tiebreaker |
