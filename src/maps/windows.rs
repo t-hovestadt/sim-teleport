@@ -22,6 +22,11 @@ pub struct WindowsSharedMap {
     size: usize,
 }
 
+// Safety: WindowsSharedMap wraps raw Win32 handles (HANDLE, MEMORY_MAPPED_VIEW_ADDRESS).
+// The handles are not reference-counted by Windows — each instance owns its own mapping.
+// Sending to another thread is safe provided only one thread accesses the view at a time,
+// which the caller guarantees. Sync (shared &self access) is safe because as_slice() returns
+// a read-only view and no method mutates through a shared reference.
 unsafe impl Send for WindowsSharedMap {}
 unsafe impl Sync for WindowsSharedMap {}
 

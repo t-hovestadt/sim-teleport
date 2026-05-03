@@ -220,7 +220,13 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 let compressed_len = if let Some(compressed) = assembled {
                     // Single-game mode: lazily create maps on first data arrival.
                     if maps.is_none() {
-                        let game = args.game.expect("maps=None only in single-game mode");
+                        let game = match args.game {
+                            Some(g) => g,
+                            None => {
+                                eprintln!("error: no game configured for single-game mode");
+                                continue;
+                            }
+                        };
                         match GameMapSet::create(game, DUAL_MAP_SIZE) {
                             Ok(set) => {
                                 println!("Created shared memory maps for {}.", game.name);
@@ -234,7 +240,9 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                         }
                     }
 
-                    let map_mode = maps.as_mut().unwrap();
+                    let Some(map_mode) = maps.as_mut() else {
+                        continue;
+                    };
                     let map_size = map_mode.page_size(page_idx);
                     let compressed_len = compressed.len();
 

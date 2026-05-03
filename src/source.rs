@@ -118,7 +118,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
             // ── Physics ──────────────────────────────────────────────────────────
             let phys_size = maps[0].size();
-            let phys_id = read_i32(maps[0].as_slice(), 0);
+            let phys_id = read_i32(maps[0].as_slice(), 0).unwrap_or(0);
             if phys_id != last_physics_id {
                 match compress_into(maps[0].as_slice(), &mut physics_cbuf) {
                     Ok(n) => {
@@ -139,7 +139,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
             // ── Graphics ─────────────────────────────────────────────────────────
             let gfx_size = maps[1].size();
-            let gfx_id = read_i32(maps[1].as_slice(), 0);
+            let gfx_id = read_i32(maps[1].as_slice(), 0).unwrap_or(0);
             if gfx_id != last_graphics_id {
                 match compress_into(maps[1].as_slice(), &mut graphics_cbuf) {
                     Ok(n) => {
@@ -157,7 +157,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 }
                 last_graphics_id = gfx_id;
                 // AC_STATUS is i32 at byte offset 4 (second field after packetId).
-                last_status = read_i32(maps[1].as_slice(), 4);
+                last_status = read_i32(maps[1].as_slice(), 4).unwrap_or(0);
             }
 
             // Update the nonzero-tick tracker; used to detect game closure below.
@@ -300,12 +300,12 @@ fn try_open_maps(game: &GameConfig) -> Result<[SharedMap; 3], MapError> {
     Ok([physics, graphics, static_])
 }
 
-/// Read a little-endian i32 from `slice` at `offset`. Returns 0 on underflow.
-fn read_i32(slice: &[u8], offset: usize) -> i32 {
-    if offset + 4 > slice.len() {
-        return 0;
-    }
-    i32::from_le_bytes(slice[offset..offset + 4].try_into().unwrap())
+/// Read a little-endian i32 from `slice` at `offset`. Returns `None` if `slice` is shorter than `offset + 4`.
+fn read_i32(slice: &[u8], offset: usize) -> Option<i32> {
+    slice
+        .get(offset..offset + 4)
+        .and_then(|b| b.try_into().ok())
+        .map(i32::from_le_bytes)
 }
 
 // Suppress unused import warning for PAGE_HEARTBEAT when not used directly.
