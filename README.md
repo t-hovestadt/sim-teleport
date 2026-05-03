@@ -218,9 +218,9 @@ Both tools print a stats line every 5 s and a summary on Ctrl-C:
 
 ```
 [Project Cars 2 / Automobilista 2]  60.1 pkt/s   72.5 KB/s   avg 1205 b/pkt   3 µs fwd
-[Wreckfest 2]  inactive
 ```
 
+Only active relays (with packets flowing) produce output — idle games are silent.
 The `µs fwd` figure is the average time to forward each packet (socket send latency only).
 
 ---
@@ -398,6 +398,8 @@ Idle ──(game detected)──► Active ──(game exits)──► Draining 
                                                         ▼
                                                       Active
 ```
+
+**One active game at a time:** In auto-detect mode only one relay is active at a time. If two games are running simultaneously, the one that appears first in the game list takes priority. A second game activates only after the first finishes its grace period and returns to Idle.
 
 **Console games (GT7, Gran Turismo Sport):** These run on a PS4/PS5 — there is no Windows process to detect. In auto-detect mode they are skipped by default. Pass `--include-console` to always bind port 33740.
 
