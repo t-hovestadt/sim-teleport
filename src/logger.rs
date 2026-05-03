@@ -35,12 +35,14 @@ impl Logger {
     }
 
     pub fn log(&self, msg: &str) {
-        let ts = Local::now().format("%H:%M:%S");
-        let line = format!("[{ts}] {msg}");
+        let now = Local::now();
+        let console_ts = now.format("%H:%M:%S");
+        let line = format!("[{console_ts}] {msg}");
         println!("{line}");
         if let Some(file) = &self.file {
             if let Ok(mut w) = file.lock() {
-                let _ = writeln!(w, "{line}");
+                let file_ts = now.format("%Y-%m-%d %H:%M:%S");
+                let _ = writeln!(w, "[{file_ts}] {msg}");
                 let _ = w.flush();
             }
         }

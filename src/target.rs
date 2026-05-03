@@ -1,39 +1,98 @@
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::logger::Logger;
 
+// ── App identity enum (replaces Box<dyn Fn>) ──────────────────────────────────
+
+#[derive(Debug, Clone, Copy)]
+enum TargetApp {
+    IracingTeleport,
+    AcTeleport,
+    SimRelay,
+}
+
+impl TargetApp {
+    fn name(self) -> &'static str {
+        match self {
+            TargetApp::IracingTeleport => "iRacing Teleport Target",
+            TargetApp::AcTeleport => "AC Teleport Target",
+            TargetApp::SimRelay => "Sim Relay Target",
+        }
+    }
+
+    fn spawn(self, config: Config, rx: Receiver<()>) -> JoinHandle<()> {
+        match self {
+            TargetApp::IracingTeleport => spawn_teleport_target(config, rx),
+            TargetApp::AcTeleport => spawn_ac_target(config, rx),
+            TargetApp::SimRelay => spawn_relay_target(config, rx),
+        }
+    }
+}
+
 // ── Per-thread slot ───────────────────────────────────────────────────────────
 
 struct TargetSlot {
-    name: &'static str,
+    app: TargetApp,
     handle: JoinHandle<()>,
     shutdown_tx: Sender<()>,
-    spawn: Box<dyn Fn(Config, Receiver<()>) -> JoinHandle<()> + Send>,
     config: Config,
     crash_count: u32,
+    next_restart: Option<Instant>,
 }
 
 impl TargetSlot {
+    fn new(app: TargetApp, config: Config) -> Self {
+        let (tx, rx) = mpsc::channel::<()>();
+        let handle = app.spawn(config.clone(), rx);
+        Self { app, handle, shutdown_tx: tx, config, crash_count: 0, next_restart: None }
+    }
+
     fn is_crashed(&self) -> bool {
         self.handle.is_finished()
     }
 
-    fn restart(&mut self, log: &Logger) {
-        self.crash_count += 1;
-        log.log(&format!(
-            "[{}] Thread crashed (#{}) — restarting",
-            self.name, self.crash_count
-        ));
-        let (tx, rx) = mpsc::channel::<()>();
-        self.shutdown_tx = tx;
-        self.handle = (self.spawn)(self.config.clone(), rx);
+    fn restart_ready(&self) -> bool {
+        self.next_restart.is_none_or(|t| Instant::now() >= t)
     }
 
-    fn stop(self) {
+    fn restart(&mut self, log: &Logger) {
+        if !self.restart_ready() {
+            return;
+        }
+        self.crash_count += 1;
+        // Exponential backoff: 2s, 5s, 15s, then cap at 60s.
+        let delay_secs = match self.crash_count {
+            1 => 2,
+            2 => 5,
+            3 => 15,
+            _ => 60,
+        };
+        log.log(&format!(
+            "[{}] Thread crashed (#{}) — restarting in {}s",
+            self.app.name(), self.crash_count, delay_secs
+        ));
+        self.next_restart = Some(Instant::now() + Duration::from_secs(delay_secs));
+        let (tx, rx) = mpsc::channel::<()>();
+        self.shutdown_tx = tx;
+        self.handle = self.app.spawn(self.config.clone(), rx);
+    }
+
+    // Send shutdown, then wait up to 5 seconds before detaching to avoid
+    // blocking the orchestrator on a stuck thread.
+    fn stop(self, log: &Logger) {
         let _ = self.shutdown_tx.send(());
+        let name = self.app.name();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !self.handle.is_finished() {
+            if Instant::now() >= deadline {
+                log.log(&format!("[{name}] Thread still exiting — detaching"));
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
         let _ = self.handle.join();
     }
 }
@@ -48,8 +107,10 @@ fn spawn_teleport_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
                 teleport::TargetConfig {
                     bind: format!("0.0.0.0:{}", config.ports.iracing_teleport),
                     unicast: true,
+                    fanalab: config.apps.fanalab,
                     high_priority: config.apps.high_priority,
                     busy_wait: config.apps.busy_wait,
+                    stale_timeout_secs: config.advanced.stale_timeout_secs,
                     ..teleport::TargetConfig::default()
                 },
                 rx,
@@ -75,7 +136,7 @@ fn spawn_ac_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
                     busy_wait: config.apps.busy_wait,
                     pin_core: None,
                     high_priority: config.apps.high_priority,
-                    stale_timeout: std::time::Duration::from_secs(10),
+                    stale_timeout: std::time::Duration::from_secs(config.advanced.stale_timeout_secs),
                 },
                 rx,
             ) {
@@ -115,44 +176,17 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     if config.apps.iracing_teleport_enabled {
         log.log(&format!("  iRacing Teleport  :{}", config.ports.iracing_teleport));
-        let (tx, rx) = mpsc::channel::<()>();
-        let cfg = config.clone();
-        slots.push(TargetSlot {
-            name: "iRacing Teleport Target",
-            handle: spawn_teleport_target(config.clone(), rx),
-            shutdown_tx: tx,
-            spawn: Box::new(|c, r| spawn_teleport_target(c, r)),
-            config: cfg,
-            crash_count: 0,
-        });
+        slots.push(TargetSlot::new(TargetApp::IracingTeleport, config.clone()));
     }
 
     if config.apps.ac_teleport_enabled {
         log.log(&format!("  AC Teleport       :{}", config.ports.ac_teleport));
-        let (tx, rx) = mpsc::channel::<()>();
-        let cfg = config.clone();
-        slots.push(TargetSlot {
-            name: "AC Teleport Target",
-            handle: spawn_ac_target(config.clone(), rx),
-            shutdown_tx: tx,
-            spawn: Box::new(|c, r| spawn_ac_target(c, r)),
-            config: cfg,
-            crash_count: 0,
-        });
+        slots.push(TargetSlot::new(TargetApp::AcTeleport, config.clone()));
     }
 
     if config.apps.sim_relay_enabled {
         log.log("  Sim Relay          all game ports");
-        let (tx, rx) = mpsc::channel::<()>();
-        let cfg = config.clone();
-        slots.push(TargetSlot {
-            name: "Sim Relay Target",
-            handle: spawn_relay_target(config.clone(), rx),
-            shutdown_tx: tx,
-            spawn: Box::new(|c, r| spawn_relay_target(c, r)),
-            config: cfg,
-            crash_count: 0,
-        });
+        slots.push(TargetSlot::new(TargetApp::SimRelay, config.clone()));
     }
 
     if slots.is_empty() {
@@ -178,7 +212,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     log.log("Shutting down...");
     for slot in slots {
-        slot.stop();
+        slot.stop(log);
     }
     log.log("All apps stopped. Goodbye.");
 }

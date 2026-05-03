@@ -69,6 +69,22 @@ impl FailureTracker {
     }
 }
 
+// ── DetachedThread guard ──────────────────────────────────────────────────────
+
+// When stop() times out it drops the JoinHandle, detaching the thread. The
+// detached thread still holds its UDP socket, so a new thread must not bind
+// the same address until the old one has actually exited. We keep a reference
+// to the old handle and poll is_finished() before allowing a new start.
+struct DetachedThread {
+    handle: JoinHandle<()>,
+}
+
+impl DetachedThread {
+    fn is_gone(&self) -> bool {
+        self.handle.is_finished()
+    }
+}
+
 // ── AppSlot ───────────────────────────────────────────────────────────────────
 
 enum SlotState {
@@ -83,6 +99,7 @@ struct AppSlot {
     state: SlotState,
     shutdown_tx: Option<Sender<()>>,
     failures: FailureTracker,
+    detached: Option<DetachedThread>,
 }
 
 impl AppSlot {
@@ -92,6 +109,7 @@ impl AppSlot {
             state: SlotState::Idle,
             shutdown_tx: None,
             failures: FailureTracker::new(),
+            detached: None,
         }
     }
 
@@ -99,6 +117,14 @@ impl AppSlot {
         if !self.failures.is_allowed() {
             log.log(&format!("[{}] Skipping start — in backoff", self.name));
             return;
+        }
+        // Guard: previous detached thread may still hold its socket.
+        if let Some(ref d) = self.detached {
+            if !d.is_gone() {
+                log.log(&format!("[{}] Waiting for detached thread to release socket", self.name));
+                return;
+            }
+            self.detached = None;
         }
         let (tx, rx) = mpsc::channel::<()>();
         self.shutdown_tx = Some(tx);
@@ -126,6 +152,8 @@ impl AppSlot {
                             unicast: true,
                             high_priority: cfg.apps.high_priority,
                             busy_wait: cfg.apps.busy_wait,
+                            reconnect_timeout_secs: cfg.advanced.reconnect_timeout_secs,
+                            datagram_size: cfg.advanced.datagram_size,
                             ..teleport::SourceConfig::default()
                         },
                         rx,
@@ -152,7 +180,7 @@ impl AppSlot {
                             busy_wait: cfg.apps.busy_wait,
                             pin_core: None,
                             high_priority: cfg.apps.high_priority,
-                            poll_rate: 60,
+                            poll_rate: cfg.advanced.ac_poll_rate,
                         },
                         rx,
                     ) {
@@ -181,7 +209,9 @@ impl AppSlot {
                         games: None,
                         all: false,
                         local_forward: false,
-                        bind: "0.0.0.0".to_string(),
+                        // Bind to source_ip so outgoing packets have the right source
+                        // address for the target's firewall rules.
+                        bind: cfg.network.source_ip.clone(),
                         high_priority: cfg.apps.high_priority,
                         scan_interval: cfg.detection.scan_interval,
                         grace_period: cfg.detection.drain_seconds,
@@ -230,7 +260,8 @@ impl AppSlot {
                 while !handle.is_finished() {
                     if Instant::now() >= deadline {
                         log.log(&format!("[{}] Thread still exiting — detaching", self.name));
-                        return; // handle dropped here, thread detaches
+                        self.detached = Some(DetachedThread { handle });
+                        return;
                     }
                     std::thread::sleep(Duration::from_millis(50));
                 }
@@ -283,6 +314,15 @@ impl AppSlot {
             _ => false,
         }
     }
+
+    fn state_label(&self) -> &'static str {
+        match &self.state {
+            SlotState::Idle => "idle",
+            SlotState::Running { .. } => "running",
+            SlotState::Draining { .. } => "draining",
+            SlotState::AlwaysOn { .. } => "running",
+        }
+    }
 }
 
 fn game_label(game: Option<ShmemGame>) -> &'static str {
@@ -314,10 +354,12 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     let scan_interval = Duration::from_secs(config.detection.scan_interval);
     let drain_timeout = Duration::from_secs(config.detection.drain_seconds);
+    let heartbeat_interval = Duration::from_secs(60);
 
     let mut scanner = ProcessScanner::new();
     let mut shmem = AppSlot::new("shmem");
     let mut relay = AppSlot::new("Sim Relay");
+    let mut last_heartbeat = Instant::now();
 
     if config.apps.sim_relay_enabled {
         relay.start_relay(&config, log);
@@ -402,6 +444,17 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
         if config.apps.sim_relay_enabled {
             relay.ensure_relay_alive(&config, log);
+        }
+
+        // Periodic status heartbeat every 60s.
+        if last_heartbeat.elapsed() >= heartbeat_interval {
+            let shmem_label = game_label(shmem.current_game());
+            let shmem_state = shmem.state_label();
+            let relay_state = relay.state_label();
+            log.log(&format!(
+                "Status: shmem={shmem_label}/{shmem_state} relay={relay_state}"
+            ));
+            last_heartbeat = Instant::now();
         }
 
         std::thread::sleep(scan_interval);

@@ -59,6 +59,10 @@ Or double-click `start-target.bat`.
 
 Both PCs must be on the same network. The gaming PC sends to the SimHub PC's IP.
 
+**Double-click `sim-bridge.exe` directly** (no arguments): sim-bridge reads the `mode`
+field from `sim-bridge.toml` and starts as source or target automatically. This is
+the recommended way to use it after first-run setup — no BAT file required.
+
 ---
 
 ## Auto-start (Task Scheduler)
@@ -91,6 +95,11 @@ Created automatically on first run, next to `sim-bridge.exe`. Re-run `sim-bridge
 | `apps.sim_relay_enabled` | `true` | Enable/disable Sim Relay |
 | `apps.high_priority` | `false` | Set `HIGH_PRIORITY_CLASS` on telemetry threads |
 | `apps.busy_wait` | `false` | Spin instead of sleeping (lower latency, higher CPU) |
+| `apps.fanalab` | `false` | Write iRacing data to FanaLab shared memory (target only) |
+| `advanced.stale_timeout_secs` | `10` | Seconds before target marks received data as stale |
+| `advanced.reconnect_timeout_secs` | `5` | Seconds iRacing source waits before reset |
+| `advanced.ac_poll_rate` | `60` | AC Teleport source poll rate (Hz) |
+| `advanced.datagram_size` | `65000` | iRacing Teleport datagram size in bytes |
 
 ---
 
@@ -109,7 +118,11 @@ On each PC: Network Adapter → Properties → IPv4 → Use the following IP add
 
 **2. Windows Firewall — allow inbound UDP on the gaming PC**
 
-Open PowerShell as Administrator and run:
+The easiest way — run `sim-bridge firewall` and paste the output into an elevated
+PowerShell. It reads your `sim-bridge.toml` and prints rules for all configured ports
+including every Sim Relay game.
+
+Or manually:
 
 ```powershell
 # iRacing Teleport

@@ -11,6 +11,8 @@ pub struct Config {
     pub ports: PortsConfig,
     pub detection: DetectionConfig,
     pub apps: AppsConfig,
+    #[serde(default)]
+    pub advanced: AdvancedConfig,
 }
 
 fn default_mode() -> String {
@@ -44,6 +46,36 @@ pub struct AppsConfig {
     pub high_priority: bool,
     #[serde(default)]
     pub busy_wait: bool,
+    #[serde(default)]
+    pub fanalab: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedConfig {
+    #[serde(default = "default_stale_timeout")]
+    pub stale_timeout_secs: u64,
+    #[serde(default = "default_reconnect_timeout")]
+    pub reconnect_timeout_secs: u64,
+    #[serde(default = "default_ac_poll_rate")]
+    pub ac_poll_rate: u32,
+    #[serde(default = "default_datagram_size")]
+    pub datagram_size: usize,
+}
+
+fn default_stale_timeout() -> u64 { 10 }
+fn default_reconnect_timeout() -> u64 { 5 }
+fn default_ac_poll_rate() -> u32 { 60 }
+fn default_datagram_size() -> usize { 65000 }
+
+impl Default for AdvancedConfig {
+    fn default() -> Self {
+        Self {
+            stale_timeout_secs: default_stale_timeout(),
+            reconnect_timeout_secs: default_reconnect_timeout(),
+            ac_poll_rate: default_ac_poll_rate(),
+            datagram_size: default_datagram_size(),
+        }
+    }
 }
 
 impl Default for Config {
@@ -68,7 +100,9 @@ impl Default for Config {
                 sim_relay_enabled: true,
                 high_priority: false,
                 busy_wait: false,
+                fanalab: false,
             },
+            advanced: AdvancedConfig::default(),
         }
     }
 }
@@ -126,6 +160,18 @@ sim_relay_enabled = {relay_enabled}
 # Performance options
 high_priority = {high_priority}
 busy_wait = {busy_wait}
+# Enable FanaLab shared-memory output on the target PC
+fanalab = {fanalab}
+
+[advanced]
+# Seconds before target marks stale iRacing/AC data as dead
+stale_timeout_secs = {stale_timeout}
+# Seconds iRacing source waits for reconnect before resetting
+reconnect_timeout_secs = {reconnect_timeout}
+# AC Teleport source poll rate (Hz)
+ac_poll_rate = {ac_poll_rate}
+# iRacing Teleport datagram size in bytes
+datagram_size = {datagram_size}
 "#,
         mode = config.mode,
         source_ip = config.network.source_ip,
@@ -139,6 +185,11 @@ busy_wait = {busy_wait}
         relay_enabled = config.apps.sim_relay_enabled,
         high_priority = config.apps.high_priority,
         busy_wait = config.apps.busy_wait,
+        fanalab = config.apps.fanalab,
+        stale_timeout = config.advanced.stale_timeout_secs,
+        reconnect_timeout = config.advanced.reconnect_timeout_secs,
+        ac_poll_rate = config.advanced.ac_poll_rate,
+        datagram_size = config.advanced.datagram_size,
     );
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
