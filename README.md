@@ -33,6 +33,16 @@ Pre-built Windows x64 binaries are on the [Releases](../../releases/latest) page
 
 ---
 
+## Windows SmartScreen
+
+On first run, Windows may show "Windows protected your PC." This is normal for unsigned open-source software.
+
+To unblock: right-click the `.exe` → **Properties** → check **Unblock** at the bottom of the General tab → **OK**.
+
+Or click **More info** on the SmartScreen dialog, then **Run anyway**.
+
+---
+
 ## Quick start
 
 **Default (multicast — works on most home networks):**
@@ -172,15 +182,25 @@ On each PC, set a static IP on the direct-link adapter:
 
 In Windows: *Network & Internet → Change adapter options → right-click adapter → Properties → IPv4 → Use the following IP address*. Leave gateway and DNS blank.
 
-**2. Firewall rules (on both PCs)**
+**2. Firewall rules**
 
-Add an inbound UDP rule for port 5001 on **both** machines:
+Run the following in PowerShell (Administrator).
 
+**On the Game PC** (receives resync packets from the SimHub PC):
+
+```powershell
+New-NetFirewallRule -DisplayName "AC Teleport source" `
+    -Direction Inbound -Protocol UDP -LocalPort 5001 -Action Allow
 ```
-New-NetFirewallRule -DisplayName "AC Teleport" -Direction Inbound -Protocol UDP -LocalPort 5001 -Action Allow
+
+**On the SimHub PC** (receives telemetry from the Game PC):
+
+```powershell
+New-NetFirewallRule -DisplayName "AC Teleport target" `
+    -Direction Inbound -Protocol UDP -LocalPort 5001 -Action Allow
 ```
 
-Or via *Windows Defender Firewall → Advanced Settings → Inbound Rules → New Rule → Port → UDP → 5001 → Allow*.
+Or via *Windows Defender Firewall → Advanced Settings → Inbound Rules → New Rule → Port → UDP → 5001 → Allow* on each PC.
 
 **3. NIC settings (both PCs)**
 
