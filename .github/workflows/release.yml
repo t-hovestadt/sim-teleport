@@ -41,6 +41,7 @@ jobs:
           mode = "source"
 
           [network]
+          unicast = false
           source_ip = "192.168.50.1"
           target_ip = "192.168.50.2"
 

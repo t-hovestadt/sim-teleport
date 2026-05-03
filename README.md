@@ -58,27 +58,55 @@ Run `sim-bridge list` for the full game list including all sim-relay UDP games.
 
 ---
 
-## Quick start
+## LAN setup (default, zero config)
 
-**Gaming PC:**
+Both PCs on the same network (home router or switch):
+
+1. Copy `sim-bridge.exe`, `start-source.bat`, and `start-target.bat` to a folder on each PC
+2. Gaming PC: double-click `start-source.bat`
+3. SimHub PC: double-click `start-target.bat`
+
+No IP addresses, no config file needed. Uses multicast (`239.255.0.1`).
+
+On first run a `sim-bridge.toml` is written next to the exe — you can leave it unchanged.
+
+---
+
+## Direct ethernet setup (lowest latency)
+
+Dedicated cable between the two PCs with no router:
+
+**1. Run the setup wizard on each PC**
+
 ```
-sim-bridge.exe source
+sim-bridge.exe setup
 ```
-Or double-click `start-source.bat`. On first run, you will be prompted for IP addresses.
 
-**SimHub PC:**
-```
-sim-bridge.exe target
-```
-Or double-click `start-target.bat`.
+Choose `[2] Direct ethernet` and enter your static IPs.
 
-Both PCs must be on the same network. The gaming PC sends to the SimHub PC's IP.
+**2. Assign static IPs**
 
-**Important:** Run `sim-bridge source` only on the **gaming PC** and `sim-bridge target` only on the **SimHub PC**. Running source on both PCs causes shared memory conflicts.
+On each PC: Network Adapter → Properties → IPv4 → Use the following IP address:
 
-**Double-click `sim-bridge.exe` directly** (no arguments): sim-bridge reads the `mode`
-field from `sim-bridge.toml` and starts as source or target automatically. This is
-the recommended way to use it after first-run setup — no BAT file required.
+| PC | IP Address | Subnet Mask | Default Gateway |
+|----|-----------|-------------|-----------------|
+| Gaming (source) | `192.168.50.1` | `255.255.255.0` | *(leave blank)* |
+| SimHub (target) | `192.168.50.2` | `255.255.255.0` | *(leave blank)* |
+
+**3. Windows Firewall**
+
+Run `sim-bridge firewall` and paste the output into an elevated PowerShell on each PC.
+It reads your `sim-bridge.toml` and prints the exact rules needed.
+
+**4. NIC settings (optional, for minimum latency)**
+
+In Device Manager → Network Adapter → Properties → Advanced, set:
+
+| Setting | Value |
+|---------|-------|
+| Speed & Duplex | 1 Gbps Full Duplex |
+| Energy-Efficient Ethernet | Disabled |
+| Power Management → Allow the computer to turn off this device | Unchecked |
 
 ---
 
@@ -115,8 +143,9 @@ Created automatically on first run, next to `sim-bridge.exe`. Re-run `sim-bridge
 | Key | Default | Description |
 |-----|---------|-------------|
 | `mode` | `"source"` | PC role: `"source"` (gaming) or `"target"` (SimHub) — used by `install` |
-| `network.source_ip` | `192.168.50.1` | Gaming PC IP |
-| `network.target_ip` | `192.168.50.2` | SimHub PC IP |
+| `network.unicast` | `false` | `false` = multicast LAN (zero config); `true` = unicast direct ethernet |
+| `network.source_ip` | `192.168.50.1` | Gaming PC IP (used when `unicast = true` or for Sim Relay) |
+| `network.target_ip` | `192.168.50.2` | SimHub PC IP (used when `unicast = true` or for Sim Relay) |
 | `ports.iracing_teleport` | `5000` | iRacing Teleport port |
 | `ports.ac_teleport` | `5001` | AC Teleport port |
 | `detection.scan_interval` | `3` | Process scan interval in seconds |
@@ -133,62 +162,6 @@ Created automatically on first run, next to `sim-bridge.exe`. Re-run `sim-bridge
 | `advanced.datagram_size` | `65000` | iRacing Teleport datagram size in bytes |
 
 **Recommended install location:** Place `sim-bridge.exe` and `sim-bridge.toml` in a user-writable directory like `C:\Simracing\`, not in Program Files. The log file (`sim-bridge.log`) and config file are written next to the exe.
-
----
-
-## Direct ethernet setup
-
-For lowest latency, connect the two PCs with a dedicated ethernet cable (no switch).
-
-**1. Assign static IPs**
-
-On each PC: Network Adapter → Properties → IPv4 → Use the following IP address:
-
-| PC | IP Address | Subnet Mask | Default Gateway |
-|----|-----------|-------------|-----------------|
-| Gaming (source) | `192.168.50.1` | `255.255.255.0` | *(leave blank)* |
-| SimHub (target) | `192.168.50.2` | `255.255.255.0` | *(leave blank)* |
-
-**2. Windows Firewall**
-
-The easiest way — run `sim-bridge firewall` and paste the output into an elevated PowerShell. It reads your `sim-bridge.toml` and prints rules for both PCs.
-
-Or manually:
-
-**On the gaming PC** (receives resync packets from the SimHub PC):
-
-```powershell
-New-NetFirewallRule -DisplayName "sim-bridge source" `
-    -Direction Inbound -Protocol UDP -LocalPort 5000,5001 -Action Allow
-```
-
-**On the SimHub PC** (receives telemetry and sim-relay game data from the gaming PC):
-
-```powershell
-New-NetFirewallRule -DisplayName "sim-bridge target" `
-    -Direction Inbound -Protocol UDP `
-    -LocalPort 5000,5001,5300,5606,9876,9999,15151,20777,23123,25555,30000,33740,34380,49003,63392 -Action Allow
-```
-
-**3. NIC settings (optional, for minimum latency)**
-
-In Device Manager → Network Adapter → Properties → Advanced, set:
-
-| Setting | Value |
-|---------|-------|
-| Speed & Duplex | 1 Gbps Full Duplex |
-| Energy-Efficient Ethernet | Disabled |
-| Power Management → Allow the computer to turn off this device | Unchecked |
-
-**4. `sim-bridge.toml`**
-
-```toml
-mode = "source"
-
-[network]
-source_ip = "192.168.50.1"
-target_ip  = "192.168.50.2"
-```
 
 ---
 

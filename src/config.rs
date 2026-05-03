@@ -23,6 +23,8 @@ fn default_mode() -> String {
 pub struct NetworkConfig {
     pub source_ip: String,
     pub target_ip: String,
+    #[serde(default)]
+    pub unicast: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +95,7 @@ impl Default for Config {
             network: NetworkConfig {
                 source_ip: "192.168.50.1".to_string(),
                 target_ip: "192.168.50.2".to_string(),
+                unicast: false,
             },
             ports: PortsConfig {
                 iracing_teleport: 5000,
@@ -143,9 +146,11 @@ pub fn write_config(config: &Config, path: &PathBuf) -> anyhow::Result<()> {
 mode = "{mode}"
 
 [network]
-# Source PC IP (gaming PC where games run)
+# Set true for direct ethernet (point-to-point, no switch/router).
+# Leave false for regular LAN (uses multicast, no IP config needed).
+unicast = {unicast}
+# IPs are only used when unicast = true (iRacing/AC) or for sim-relay forwarding.
 source_ip = "{source_ip}"
-# Target PC IP (SimHub PC)
 target_ip = "{target_ip}"
 
 [ports]
@@ -182,6 +187,7 @@ ac_poll_rate = {ac_poll_rate}
 datagram_size = {datagram_size}
 "#,
         mode = config.mode,
+        unicast = config.network.unicast,
         source_ip = config.network.source_ip,
         target_ip = config.network.target_ip,
         iracing_port = config.ports.iracing_teleport,
@@ -240,7 +246,17 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
     println!("=== sim-bridge setup ===");
     println!();
 
+    // Connection type — determines whether unicast is needed.
+    println!("How are the two PCs connected?");
+    println!("  [1] LAN — both PCs on the same network (zero config, recommended)");
+    println!("  [2] Direct ethernet — dedicated cable between the two PCs");
+    print!("> ");
+    io::stdout().flush()?;
+    let conn = read_line();
+    config.network.unicast = conn == "2";
+
     // Mode
+    println!();
     println!("Is this the gaming PC or the SimHub PC?");
     println!("  [1] Source — games run here (default)");
     println!("  [2] Target — SimHub runs here");
@@ -253,29 +269,44 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
         "source".to_string()
     };
 
-    if config.mode == "source" {
-        print!("This PC's IP (gaming PC): [{}] ", config.network.source_ip);
-        io::stdout().flush()?;
-        let input = read_line();
-        if !input.is_empty() {
-            config.network.source_ip = input;
-        }
+    // IP addresses — only needed for direct ethernet (unicast) or sim-relay forwarding.
+    if config.network.unicast {
+        println!();
+        if config.mode == "source" {
+            print!("This PC's IP (gaming PC): [{}] ", config.network.source_ip);
+            io::stdout().flush()?;
+            let input = read_line();
+            if !input.is_empty() {
+                config.network.source_ip = input;
+            }
 
-        print!("Remote SimHub PC's IP: [{}] ", config.network.target_ip);
-        io::stdout().flush()?;
-        let input = read_line();
-        if !input.is_empty() {
-            config.network.target_ip = input;
-        }
-    } else {
-        print!("Remote gaming PC's IP: [{}] ", config.network.source_ip);
-        io::stdout().flush()?;
-        let input = read_line();
-        if !input.is_empty() {
-            config.network.source_ip = input;
-        }
+            print!("Remote SimHub PC's IP: [{}] ", config.network.target_ip);
+            io::stdout().flush()?;
+            let input = read_line();
+            if !input.is_empty() {
+                config.network.target_ip = input;
+            }
+        } else {
+            print!("Remote gaming PC's IP: [{}] ", config.network.source_ip);
+            io::stdout().flush()?;
+            let input = read_line();
+            if !input.is_empty() {
+                config.network.source_ip = input;
+            }
 
-        print!("This PC's IP (SimHub PC): [{}] ", config.network.target_ip);
+            print!("This PC's IP (SimHub PC): [{}] ", config.network.target_ip);
+            io::stdout().flush()?;
+            let input = read_line();
+            if !input.is_empty() {
+                config.network.target_ip = input;
+            }
+        }
+    } else if config.apps.sim_relay_enabled {
+        // Sim Relay always needs the target IP for UDP forwarding even on LAN.
+        println!();
+        println!("Sim Relay forwards UDP to the SimHub PC — enter its IP.");
+        println!("(Skip this if you don't use F1, Forza, BeamNG, etc.)");
+        print!("SimHub PC's IP (for Sim Relay): [{}] ", config.network.target_ip);
         io::stdout().flush()?;
         let input = read_line();
         if !input.is_empty() {
@@ -308,6 +339,11 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
     write_config(&config, &save_path)?;
     println!();
     println!("Config saved to {}", save_path.display());
+    if !config.network.unicast {
+        println!();
+        println!("LAN mode: no IP configuration needed for iRacing and AC.");
+        println!("Both PCs must be on the same network.");
+    }
     println!();
     println!("To start now:     sim-bridge {}", config.mode);
     println!("To start on boot: sim-bridge install");

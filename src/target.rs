@@ -115,7 +115,7 @@ fn spawn_teleport_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
             if let Err(e) = teleport::run_target(
                 teleport::TargetConfig {
                     bind: format!("0.0.0.0:{}", config.ports.iracing_teleport),
-                    unicast: true,
+                    unicast: config.network.unicast,
                     fanalab: config.apps.fanalab,
                     high_priority: config.apps.high_priority,
                     busy_wait: config.apps.busy_wait,
@@ -141,7 +141,7 @@ fn spawn_ac_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
                     game: None,
                     bind: format!("0.0.0.0:{}", config.ports.ac_teleport),
                     group: teleport::DEFAULT_MULTICAST.to_string(),
-                    unicast: true,
+                    unicast: config.network.unicast,
                     busy_wait: config.apps.busy_wait,
                     pin_core: None,
                     high_priority: config.apps.high_priority,

@@ -165,19 +165,25 @@ impl AppSlot {
             .name(name.to_string())
             .spawn(move || match game {
                 ShmemGame::Iracing => {
-                    // Bind to source_ip:port so firewall rules pass resync packets
-                    // from the target back to this exact address (issue #2).
+                    let (target, bind) = if cfg.network.unicast {
+                        // Unicast: send directly to target_ip, bind to source_ip so
+                        // firewall rules pass resync packets back to this exact address.
+                        (
+                            format!("{}:{}", cfg.network.target_ip, cfg.ports.iracing_teleport),
+                            format!("{}:{}", cfg.network.source_ip, cfg.ports.iracing_teleport),
+                        )
+                    } else {
+                        // Multicast (LAN default): zero config, no IPs needed.
+                        (
+                            format!("{}:{}", teleport::DEFAULT_MULTICAST, cfg.ports.iracing_teleport),
+                            "0.0.0.0:0".to_string(),
+                        )
+                    };
                     if let Err(e) = teleport::run_source(
                         teleport::SourceConfig {
-                            target: format!(
-                                "{}:{}",
-                                cfg.network.target_ip, cfg.ports.iracing_teleport
-                            ),
-                            bind: format!(
-                                "{}:{}",
-                                cfg.network.source_ip, cfg.ports.iracing_teleport
-                            ),
-                            unicast: true,
+                            target,
+                            bind,
+                            unicast: cfg.network.unicast,
                             high_priority: cfg.apps.high_priority,
                             busy_wait: cfg.apps.busy_wait,
                             reconnect_timeout_secs: cfg.advanced.reconnect_timeout_secs,
@@ -190,15 +196,25 @@ impl AppSlot {
                     }
                 }
                 ShmemGame::AcTeleport => {
-                    // Bind to source_ip:port for consistent firewall targeting (issue #3).
                     // game: None → ac-teleport probes shared memory to auto-detect
                     // the exact variant (EVO / AC1 / ACC) at startup.
+                    let (target, bind) = if cfg.network.unicast {
+                        (
+                            format!("{}:{}", cfg.network.target_ip, cfg.ports.ac_teleport),
+                            format!("{}:{}", cfg.network.source_ip, cfg.ports.ac_teleport),
+                        )
+                    } else {
+                        (
+                            format!("{}:{}", teleport::DEFAULT_MULTICAST, cfg.ports.ac_teleport),
+                            "0.0.0.0:0".to_string(),
+                        )
+                    };
                     if let Err(e) = ac_teleport::source::run(
                         ac_teleport::SourceArgs {
                             game: None,
-                            target: format!("{}:{}", cfg.network.target_ip, cfg.ports.ac_teleport),
-                            bind: format!("{}:{}", cfg.network.source_ip, cfg.ports.ac_teleport),
-                            unicast: true,
+                            target,
+                            bind,
+                            unicast: cfg.network.unicast,
                             busy_wait: cfg.apps.busy_wait,
                             pin_core: None,
                             high_priority: cfg.apps.high_priority,
