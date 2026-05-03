@@ -86,23 +86,13 @@ impl Stats {
         if elapsed < PRINT_INTERVAL {
             return;
         }
-        let elapsed_s = elapsed.as_secs_f64();
-        let rate = self.updates as f64 / elapsed_s;
-        let mbps = (self.bytes as f64 * 8.0) / (elapsed_s * 1_000_000.0);
-        let ratio = if self.bytes > 0 {
-            self.uncompressed_bytes as f64 / self.bytes as f64
-        } else {
-            0.0
-        };
-        let avg_frags = self.fragments as f64 / self.updates.max(1) as f64;
-        let avg_lat = self.latency_us as f64 / self.updates.max(1) as f64;
+        // Snapshot and reset unconditionally so the window stays accurate even when silent.
+        let updates = self.updates;
+        let bytes = self.bytes;
+        let uncompressed_bytes = self.uncompressed_bytes;
+        let fragments = self.fragments;
+        let latency_us = self.latency_us;
         let dropped = self.dropped;
-
-        println!(
-            "[{name}] {rate:.1} msg/s  {mbps:.2} Mbps  {ratio:.1}x  {avg_lat:.0} µs avg  {avg_frags:.1} frags/msg  {dropped} dropped",
-            name = self.name,
-        );
-
         self.updates = 0;
         self.bytes = 0;
         self.uncompressed_bytes = 0;
@@ -110,6 +100,25 @@ impl Stats {
         self.latency_us = 0;
         self.dropped = 0;
         self.window_start = Instant::now();
+
+        if updates == 0 {
+            return;
+        }
+
+        let elapsed_s = elapsed.as_secs_f64();
+        let rate = updates as f64 / elapsed_s;
+        let mbps = (bytes as f64 * 8.0) / (elapsed_s * 1_000_000.0);
+        let ratio = if bytes > 0 {
+            uncompressed_bytes as f64 / bytes as f64
+        } else {
+            0.0
+        };
+        let avg_frags = fragments as f64 / updates as f64;
+        let avg_lat = latency_us as f64 / updates as f64;
+        println!(
+            "[{name}] {rate:.1} msg/s  {mbps:.2} Mbps  {ratio:.1}x  {avg_lat:.0} µs avg  {avg_frags:.1} frags/msg  {dropped} dropped",
+            name = self.name,
+        );
     }
 
     pub fn print_summary(&self) {
