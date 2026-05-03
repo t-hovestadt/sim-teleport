@@ -124,14 +124,14 @@ Game Options → Settings → **Telemetry Settings** → UDP On, port 20777. (F1
 
 **Wreckfest 2** (port 23123) — `wreckfest2` — telemetry sent automatically.
 
-**Gran Turismo** (port 33740 — console, no process detection)
+**Gran Turismo** (port 33740 — PS4/PS5 console, no PC process to detect)
 
 | ID | Game |
 |----|------|
 | `gt7` | Gran Turismo 7 |
 | `gt-sport` | Gran Turismo Sport |
 
-Settings → enable UDP telemetry, port 33740.
+Settings → enable UDP telemetry, port 33740. In auto-detect mode, pass `--include-console` to bind port 33740 (or use `--games gt7`).
 
 **Truck / Farm Sims** (port 25555)
 
@@ -194,15 +194,9 @@ Piboso titles send automatically. LFS: Options → Output → OutSim → enable,
 
 ## How It Works
 
-- **source** binds each game's default UDP port with `SO_REUSEADDR`, reads incoming packets
-  in a non-blocking drain loop, and re-transmits raw bytes to the target PC. No parsing, no
-  modification — SimHub receives the same bytes the game sent.
-- **target** (optional) listens on the same ports and forwards to `127.0.0.1:<port>` so SimHub
-  on the target PC receives packets on the port it expects. A separate forwarding socket is used
-  to prevent loopback self-receive. Useful if SimHub is configured for a non-default port.
-- **Drain loop**: both source and target drain all queued packets from each socket per iteration
-  before sleeping 100 µs. This prevents buffer buildup under burst conditions (e.g. 300 pkt/s
-  from pcars2).
+- **source** (auto-detect mode, default) scans for running game processes every 5 seconds and binds a port only when that game is running. With `--all` it binds all ports at startup. Packets are read in a non-blocking drain loop and re-transmitted raw to the target PC — SimHub receives the same bytes the game sent.
+- **target** (optional) listens on all game ports and forwards to `127.0.0.1:<port>` so SimHub on the target PC receives packets on the expected port. A separate forwarding socket prevents loopback self-receive. Most users don't need `target.exe` — SimHub can receive UDP from source directly.
+- **Drain loop**: both source and target drain all queued packets from each socket per iteration. When any relay is active the loop sleeps 100 µs; when all are idle it sleeps 100 ms (near-zero idle CPU).
 
 Both tools print a stats line every 5 s and a summary on Ctrl-C:
 
@@ -357,7 +351,7 @@ sim-relay source also forwards each packet to `localhost:<port+1000>`. Configure
 source PC to listen on that offset port (e.g. pcars2 → 6606 instead of 5606).
 
 ```
-source.exe --target 192.168.50.2 --all --local-forward
+source.exe --target 192.168.50.2 --local-forward
 ```
 
 **Option B — Run SimHub only on the target PC.** Cleanest setup.
