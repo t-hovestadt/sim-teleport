@@ -14,6 +14,10 @@ executables, no installers, no dependencies.
 └─────────────────────────┘                                           └─────────────────────────┘
 ```
 
+**For all games in one app:** [sim-bridge](https://github.com/t-hovestadt/sim-bridge)
+bundles AC Teleport with iRacing Teleport and Sim Relay. One binary,
+automatic game detection.
+
 **Companion projects:**
 - [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) — iRacing (shared memory)
 - [sim-relay](https://github.com/t-hovestadt/sim-relay) — games that broadcast UDP natively
