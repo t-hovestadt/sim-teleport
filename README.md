@@ -181,6 +181,101 @@ BeamNG, Wreckfest 2, DiRT Rally 2.0, Euro/American Truck Simulator, and more.
 
 ---
 
+## Per-game setup notes
+
+Most UDP relay games work automatically once the process is detected. A few
+require in-game settings or config files before they send telemetry.
+
+### Wreckfest 2
+
+Wreckfest 2 does **not** send telemetry by default. You must create a config
+file manually.
+
+1. Find your profile folder:
+   ```
+   %USERPROFILE%\Documents\My Games\Wreckfest 2\
+   ```
+   Inside you'll find a numbered folder (your Steam ID). Open it.
+
+2. Create the path `savegame\telemetry\` if it doesn't exist.
+
+3. Create `config.json` in that folder with this content:
+   ```json
+   {
+     "udp": [
+       {
+         "enabled": 1,
+         "ip": "127.0.0.1",
+         "port": "23123"
+       }
+     ]
+   }
+   ```
+
+4. Full path example:
+   ```
+   %USERPROFILE%\Documents\My Games\Wreckfest 2\76561198012345678\savegame\telemetry\config.json
+   ```
+
+5. Restart Wreckfest 2. sim-bridge will detect the process and start relaying
+   telemetry automatically.
+
+### F1 25 / F1 24 / DiRT Rally 2.0 / WRC
+
+Enable UDP telemetry in **Game Options → Settings → Telemetry Settings**. Set
+port to `20777` and IP to `127.0.0.1`.
+
+### Euro / American Truck Simulator
+
+Install the [SCS SDK Telemetry Plugin](https://github.com/RenCloud/scs-sdk-plugin).
+The plugin creates a shared memory interface that sim-relay forwards as UDP.
+
+---
+
+## SimHub setup on the target PC
+
+SimHub detects games via shared memory maps and UDP packets. On the target PC,
+no game process runs — sim-bridge creates the maps and forwards the UDP.
+sim-bridge also tells SimHub which game is active via the `-switchgame` command.
+
+### One-time setup per game
+
+**iRacing** — works automatically. SimHub reads the shared memory maps created
+by sim-bridge target.
+
+**Assetto Corsa (AC1 / ACC / EVO)** — SimHub may show "game not configured" or
+fail to activate AC on first launch. Fix:
+
+1. Open SimHub on the target PC
+2. Left sidebar → find **Assetto Corsa** in the game list
+3. If it shows a warning: right-click → **Enable** (or click through any
+   configuration wizard, choosing "Configure manually" to skip the game-path scan)
+4. SimHub will now read `acpmf_physics`, `acpmf_graphics`, `acpmf_static` maps
+   when sim-bridge switches to AC
+
+Repeat for **Assetto Corsa Competizione** if you also use ACC.
+For **Assetto Corsa EVO**, check whether your SimHub version includes an EVO
+entry — it may need a SimHub update.
+
+**UDP games (F1, Forza, BeamNG, Wreckfest 2, etc.)** — work automatically.
+SimHub listens on each game's UDP port and identifies the packet format.
+
+### SimHub in-game app (opponent tracking)
+
+SimHub's Assetto Corsa in-game app creates a separate shared memory map
+(`acpmf_simhub_v2`) on the gaming PC for opponent tracking and leaderboard data.
+This map is **not** forwarded by sim-bridge — only the three core telemetry maps
+(`acpmf_physics`, `acpmf_graphics`, `acpmf_static`) are forwarded.
+
+**What works via sim-bridge:** speed, RPM, gear, throttle/brake, temperatures,
+tyre data, lap times, position, session info.
+
+**What does not work:** opponent tracking, leaderboard overlays that read from
+`acpmf_simhub_v2`. These require the SimHub app running inside AC on the gaming PC
+and the map being forwarded — currently out of scope.
+
+---
+
 ## CLI reference
 
 ### `sim-bridge source [OPTIONS]`
