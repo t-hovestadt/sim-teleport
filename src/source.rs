@@ -4,9 +4,18 @@ use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::logger::Logger;
+use crate::report::SessionReport;
 use crate::scanner::{
     probe_ac_maps, probe_iracing_event, AcProbeResult, ProcessScanner, ShmemDetection,
 };
+
+// ── Scan context (passed to detection functions) ──────────────────────────────
+
+struct ScanCtx<'a> {
+    verbose: bool,
+    log: &'a Logger,
+    report: &'a mut SessionReport,
+}
 
 // ── Game detection ────────────────────────────────────────────────────────────
 
@@ -43,9 +52,10 @@ fn detect_shmem_game(
     running_ac: Option<ShmemGame>,
     scanner: &ProcessScanner,
     cfg: &Config,
-    verbose: bool,
-    log: &Logger,
+    ctx: &mut ScanCtx<'_>,
 ) -> Option<Detection> {
+    let verbose = ctx.verbose;
+    let log = ctx.log;
     if cfg.apps.iracing_teleport_enabled && iracing_detected {
         return Some(Detection {
             game: ShmemGame::Iracing,
@@ -81,7 +91,13 @@ fn detect_shmem_game(
                 });
             }
             Some(ShmemDetection::Stale) => {
+                ctx.report.ac_evo_tiebreaker += 1;
                 if scanner.is_running(&["AssettoCorsa_EVO.exe", "assettocorsaevo.exe"]) {
+                    ctx.report.ac_evo_tiebreaker_hits += 1;
+                    ctx.report.push_note(format!(
+                        "{} AC EVO: stale maps, process found → on menu",
+                        chrono::Local::now().format("%H:%M:%S")
+                    ));
                     if verbose {
                         log.log("[scan] AC EVO tiebreaker: process found — game on menu");
                     }
@@ -91,6 +107,10 @@ fn detect_shmem_game(
                         how: "shmem+process (menu)",
                     });
                 }
+                ctx.report.push_note(format!(
+                    "{} AC EVO: stale maps, no process → ghost",
+                    chrono::Local::now().format("%H:%M:%S")
+                ));
                 if verbose {
                     log.log("[scan] AC EVO tiebreaker: process not found — ghost maps, skipping");
                 }
@@ -123,7 +143,13 @@ fn detect_shmem_game(
                 });
             }
             Some(ShmemDetection::Stale) => {
+                ctx.report.ac1_tiebreaker += 1;
                 if scanner.is_running(&["acc.exe"]) {
+                    ctx.report.ac1_tiebreaker_hits += 1;
+                    ctx.report.push_note(format!(
+                        "{} AC1: stale maps, acc.exe found → ACC on menu",
+                        chrono::Local::now().format("%H:%M:%S")
+                    ));
                     if verbose {
                         log.log("[scan] AC1/ACC tiebreaker: acc.exe found (stale) — Assetto Corsa Competizione");
                     }
@@ -134,6 +160,11 @@ fn detect_shmem_game(
                     });
                 }
                 if scanner.is_running(&["acs.exe"]) {
+                    ctx.report.ac1_tiebreaker_hits += 1;
+                    ctx.report.push_note(format!(
+                        "{} AC1: stale maps, acs.exe found → AC on menu",
+                        chrono::Local::now().format("%H:%M:%S")
+                    ));
                     if verbose {
                         log.log("[scan] AC1/ACC tiebreaker: acs.exe found (stale) — Assetto Corsa");
                     }
@@ -143,6 +174,10 @@ fn detect_shmem_game(
                         how: "shmem+process (menu)",
                     });
                 }
+                ctx.report.push_note(format!(
+                    "{} AC1: stale maps, no process → ghost",
+                    chrono::Local::now().format("%H:%M:%S")
+                ));
                 if verbose {
                     log.log("[scan] AC1 tiebreaker: no process found — ghost maps, skipping");
                 }
@@ -166,6 +201,14 @@ fn detect_shmem_game(
                 continue;
             }
             if scanner.is_running(game.process_names) {
+                ctx.report.process_scan_matches += 1;
+                ctx.report.push_note(format!(
+                    "{} Process match: {} → {} (port {})",
+                    chrono::Local::now().format("%H:%M:%S"),
+                    game.process_names.join(", "),
+                    game.name,
+                    game.default_port
+                ));
                 if verbose {
                     let names = game.process_names.join(", ");
                     log.log(&format!(
@@ -183,10 +226,14 @@ fn detect_shmem_game(
                 });
             }
         }
+        let process_count = scanner.process_count();
+        ctx.report.push_note(format!(
+            "{} Process scan: 0 matches in {process_count} processes",
+            chrono::Local::now().format("%H:%M:%S")
+        ));
         if verbose {
             log.log(&format!(
-                "[scan] Process scan: 0 matches in {} processes",
-                scanner.process_count()
+                "[scan] Process scan: 0 matches in {process_count} processes",
             ));
             log.log("[scan] Expected processes (first 5):");
             for game in sim_relay::games::GAMES
@@ -287,10 +334,10 @@ impl AppSlot {
         }
     }
 
-    fn start_shmem(&mut self, detection: &Detection, config: &Config, log: &Logger) {
+    fn start_shmem(&mut self, detection: &Detection, config: &Config, log: &Logger) -> bool {
         if !self.failures.is_allowed() {
             log.log(&format!("[{}] Skipping start — in backoff", self.name));
-            return;
+            return false;
         }
         // Guard: previous detached thread may still hold its socket.
         if let Some(ref d) = self.detached {
@@ -299,7 +346,7 @@ impl AppSlot {
                     "[{}] Waiting for detached thread to release socket",
                     self.name
                 ));
-                return;
+                return false;
             }
             self.detached = None;
         }
@@ -419,6 +466,7 @@ impl AppSlot {
             detection.how
         ));
         self.state = SlotState::Running { handle, game };
+        true
     }
 
     fn begin_drain(&mut self) {
@@ -518,13 +566,46 @@ fn run_detection_cycle(
     config: &Config,
     scanner: &mut ProcessScanner,
     log: &Logger,
+    report: &mut SessionReport,
 ) -> Option<Detection> {
     let verbose = config.verbose;
-    let iracing_detected =
-        config.apps.iracing_teleport_enabled && probe_iracing_event(verbose, log);
+    let mut ctx = ScanCtx {
+        verbose,
+        log,
+        report,
+    };
+    ctx.report.total_scans += 1;
+
+    let iracing_detected = if config.apps.iracing_teleport_enabled {
+        ctx.report.iracing_probes += 1;
+        let found = probe_iracing_event(verbose, log);
+        if found {
+            ctx.report.iracing_hits += 1;
+        }
+        found
+    } else {
+        false
+    };
 
     let ac_probe = if config.apps.ac_teleport_enabled && !iracing_detected {
-        probe_ac_maps(verbose, log)
+        let result = probe_ac_maps(verbose, log);
+        if result.ac_evo.is_some() {
+            ctx.report.ac_evo_probes += 1;
+            match result.ac_evo {
+                Some(ShmemDetection::Live) => ctx.report.ac_evo_live += 1,
+                Some(ShmemDetection::Stale) => ctx.report.ac_evo_stale += 1,
+                None => {}
+            }
+        }
+        if result.ac1.is_some() {
+            ctx.report.ac1_probes += 1;
+            match result.ac1 {
+                Some(ShmemDetection::Live) => ctx.report.ac1_live += 1,
+                Some(ShmemDetection::Stale) => ctx.report.ac1_stale += 1,
+                None => {}
+            }
+        }
+        result
     } else {
         AcProbeResult {
             ac_evo: None,
@@ -544,23 +625,18 @@ fn run_detection_cycle(
             && ac_probe.ac1.is_none());
     if need_process_scan {
         scanner.refresh();
+        ctx.report.process_scans += 1;
     }
 
+    ctx.report.total_scans += 1;
+
     // running_ac is None — this function is not called while Running.
-    detect_shmem_game(
-        iracing_detected,
-        &ac_probe,
-        None,
-        scanner,
-        config,
-        verbose,
-        log,
-    )
+    detect_shmem_game(iracing_detected, &ac_probe, None, scanner, config, &mut ctx)
 }
 
 // ── Main source loop ──────────────────────────────────────────────────────────
 
-pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
+pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string: &str) {
     if config.network.source_ip == config.network.target_ip {
         log.log("ERROR: source_ip and target_ip are the same. source mode runs on the gaming PC, target mode runs on the SimHub PC. Check sim-bridge.toml.");
         return;
@@ -597,10 +673,22 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let scan_interval = Duration::from_secs(config.detection.scan_interval);
     let drain_timeout = Duration::from_secs(config.detection.drain_seconds);
     let heartbeat_interval = Duration::from_secs(60);
+    let report_interval = Duration::from_secs(60);
 
     let mut scanner = ProcessScanner::new();
     let mut shmem = AppSlot::new("shmem");
     let mut last_heartbeat = Instant::now();
+    let mut last_report = Instant::now();
+
+    let config_summary = if config.network.unicast {
+        format!(
+            "unicast=true source={} target={}",
+            config.network.source_ip, config.network.target_ip
+        )
+    } else {
+        format!("unicast=false target={}", config.network.target_ip)
+    };
+    let mut report = SessionReport::new(version_string.to_string(), config_summary);
 
     log.log(&format!(
         "Scanning for games every {}s...",
@@ -626,7 +714,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             }
         } else {
             // Idle or Draining — run full detection cycle.
-            let desired = run_detection_cycle(&config, &mut scanner, log);
+            let desired = run_detection_cycle(&config, &mut scanner, log, &mut report);
 
             let drain_expired = shmem
                 .drain_since()
@@ -635,7 +723,14 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
             match (&shmem.state, desired.as_ref()) {
                 (SlotState::Idle, Some(d)) => {
-                    shmem.start_shmem(d, &config, log);
+                    let app = match d.game {
+                        ShmemGame::Iracing => "iRacing Teleport",
+                        ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc => "AC Teleport",
+                        ShmemGame::SimRelay { .. } => "Sim Relay",
+                    };
+                    if shmem.start_shmem(d, &config, log) {
+                        report.start_session(app, d.label, d.how);
+                    }
                 }
 
                 // Same game re-detected while draining — cancel shutdown.
@@ -652,14 +747,23 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
                     let old_name = game_label(shmem.current_game());
                     log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
                     shmem.stop(log);
+                    report.end_session("switched to new game");
                     shmem.failures.reset();
-                    shmem.start_shmem(d, &config, log);
+                    let app = match d.game {
+                        ShmemGame::Iracing => "iRacing Teleport",
+                        ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc => "AC Teleport",
+                        ShmemGame::SimRelay { .. } => "Sim Relay",
+                    };
+                    if shmem.start_shmem(d, &config, log) {
+                        report.start_session(app, d.label, d.how);
+                    }
                 }
 
                 (SlotState::Draining { .. }, None) if drain_expired => {
                     let name = game_label(shmem.current_game());
                     log.log(&format!("[{name}] Stopped"));
                     shmem.stop(log);
+                    report.end_session("drain expired");
                     shmem.failures.reset();
                 }
 
@@ -667,7 +771,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             }
         }
 
-        // Periodic status heartbeat every 60s.
+        // Periodic status heartbeat and report write every 60s.
         if last_heartbeat.elapsed() >= heartbeat_interval {
             log.log(&format!(
                 "Status: {}/{}",
@@ -676,11 +780,17 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             ));
             last_heartbeat = Instant::now();
         }
+        if last_report.elapsed() >= report_interval {
+            report.write();
+            last_report = Instant::now();
+        }
 
         std::thread::sleep(scan_interval);
     }
 
     log.log("Shutting down...");
     shmem.stop(log);
+    report.end_session("Ctrl-C shutdown");
+    report.write();
     log.log("All apps stopped. Goodbye.");
 }

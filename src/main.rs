@@ -1,6 +1,7 @@
 mod config;
 mod install;
 mod logger;
+mod report;
 mod scanner;
 mod source;
 mod target;
@@ -296,6 +297,10 @@ fn run_source(
         cfg.verbose = true;
     }
 
+    let version_string = format!(
+        "{VERSION} (teleport {TELEPORT_VERSION}, ac-teleport {AC_VERSION}, sim-relay {RELAY_VERSION})"
+    );
+
     let (tx, rx) = mpsc::channel::<()>();
     ctrlc::set_handler(move || {
         println!("\nCtrl-C received...");
@@ -303,7 +308,7 @@ fn run_source(
     })
     .expect("failed to install Ctrl-C handler");
 
-    source::run(cfg, &log, rx);
+    source::run(cfg, &log, rx, &version_string);
 }
 
 #[allow(clippy::too_many_arguments)]
