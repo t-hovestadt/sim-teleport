@@ -13,6 +13,8 @@ pub struct Config {
     pub apps: AppsConfig,
     #[serde(default)]
     pub advanced: AdvancedConfig,
+    #[serde(default)]
+    pub simhub: SimhubConfig,
     /// CLI-only flag — never written to or read from toml.
     #[serde(skip)]
     pub verbose: bool,
@@ -80,6 +82,35 @@ fn default_datagram_size() -> usize {
     9000
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimhubConfig {
+    /// Full path to SimHubWPF.exe. None = use the default install location.
+    pub path: Option<String>,
+    /// SimHub game code for iRacing telemetry.
+    #[serde(default = "default_iracing_code")]
+    pub iracing: String,
+    /// SimHub game code for AC/ACE/ACC telemetry.
+    #[serde(default = "default_ac_code")]
+    pub ac: String,
+}
+
+fn default_iracing_code() -> String {
+    "iRacing".to_string()
+}
+fn default_ac_code() -> String {
+    "AssettoCorsa".to_string()
+}
+
+impl Default for SimhubConfig {
+    fn default() -> Self {
+        Self {
+            path: None,
+            iracing: default_iracing_code(),
+            ac: default_ac_code(),
+        }
+    }
+}
+
 impl Default for AdvancedConfig {
     fn default() -> Self {
         Self {
@@ -118,6 +149,7 @@ impl Default for Config {
                 fanalab: false,
             },
             advanced: AdvancedConfig::default(),
+            simhub: SimhubConfig::default(),
         }
     }
 }
@@ -180,6 +212,14 @@ reconnect_timeout_secs = {reconnect_timeout}
 ac_poll_rate = {ac_poll_rate}
 # iRacing Teleport datagram size in bytes
 datagram_size = {datagram_size}
+
+[simhub]
+# Automatically switch SimHub to the correct game when telemetry arrives.
+# Full path to SimHubWPF.exe (leave commented for default install location).
+# path = "C:/Program Files (x86)/SimHub/SimHubWPF.exe"
+# SimHub game codes — change only if SimHub uses a different string for your setup.
+iracing = "{iracing_code}"
+ac = "{ac_code}"
 "#,
         mode = config.mode,
         unicast = config.network.unicast,
@@ -199,6 +239,8 @@ datagram_size = {datagram_size}
         reconnect_timeout = config.advanced.reconnect_timeout_secs,
         ac_poll_rate = config.advanced.ac_poll_rate,
         datagram_size = config.advanced.datagram_size,
+        iracing_code = config.simhub.iracing,
+        ac_code = config.simhub.ac,
     );
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

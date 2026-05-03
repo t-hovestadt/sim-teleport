@@ -1,9 +1,58 @@
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+type DataCb = Arc<dyn Fn() + Send + Sync>;
+
 use crate::config::Config;
 use crate::logger::Logger;
+
+// ── SimHub auto-switching ─────────────────────────────────────────────────────
+
+struct ActiveGameTracker {
+    current: Mutex<Option<String>>,
+}
+
+impl ActiveGameTracker {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            current: Mutex::new(None),
+        })
+    }
+
+    fn try_activate(&self, game_code: &str, simhub_path: Option<&str>) {
+        let mut guard = self.current.lock().unwrap();
+        if guard.as_deref() == Some(game_code) {
+            return;
+        }
+        *guard = Some(game_code.to_string());
+        drop(guard);
+        switch_simhub_game(game_code, simhub_path);
+    }
+
+    fn deactivate(&self) {
+        *self.current.lock().unwrap() = None;
+    }
+}
+
+#[cfg(windows)]
+fn switch_simhub_game(game_code: &str, simhub_path: Option<&str>) {
+    let exe = simhub_path.unwrap_or("C:/Program Files (x86)/SimHub/SimHubWPF.exe");
+    match std::process::Command::new(exe)
+        .arg("-switchgame")
+        .arg(game_code)
+        .spawn()
+    {
+        Ok(_) => println!("[simhub] switched to {game_code}"),
+        Err(e) => eprintln!("[simhub] failed to switch to {game_code}: {e}"),
+    }
+}
+
+#[cfg(not(windows))]
+fn switch_simhub_game(game_code: &str, _simhub_path: Option<&str>) {
+    println!("[simhub] would switch to {game_code} (no-op on non-Windows)");
+}
 
 // ── App identity enum (replaces Box<dyn Fn>) ──────────────────────────────────
 
@@ -23,10 +72,18 @@ impl TargetApp {
         }
     }
 
-    fn spawn(self, config: Config, rx: Receiver<()>) -> JoinHandle<()> {
+    fn spawn(
+        self,
+        config: Config,
+        rx: Receiver<()>,
+        on_first_data: Option<DataCb>,
+        on_stale: Option<DataCb>,
+    ) -> JoinHandle<()> {
         match self {
-            TargetApp::IracingTeleport => spawn_teleport_target(config, rx),
-            TargetApp::AcTeleport => spawn_ac_target(config, rx),
+            TargetApp::IracingTeleport => {
+                spawn_teleport_target(config, rx, on_first_data, on_stale)
+            }
+            TargetApp::AcTeleport => spawn_ac_target(config, rx, on_first_data, on_stale),
             TargetApp::SimRelay => spawn_relay_target(config, rx),
         }
     }
@@ -41,12 +98,19 @@ struct TargetSlot {
     config: Config,
     crash_count: u32,
     next_restart: Option<Instant>,
+    on_first_data: Option<DataCb>,
+    on_stale: Option<DataCb>,
 }
 
 impl TargetSlot {
-    fn new(app: TargetApp, config: Config) -> Self {
+    fn new(
+        app: TargetApp,
+        config: Config,
+        on_first_data: Option<DataCb>,
+        on_stale: Option<DataCb>,
+    ) -> Self {
         let (tx, rx) = mpsc::channel::<()>();
-        let handle = app.spawn(config.clone(), rx);
+        let handle = app.spawn(config.clone(), rx, on_first_data.clone(), on_stale.clone());
         Self {
             app,
             handle,
@@ -54,6 +118,8 @@ impl TargetSlot {
             config,
             crash_count: 0,
             next_restart: None,
+            on_first_data,
+            on_stale,
         }
     }
 
@@ -86,7 +152,12 @@ impl TargetSlot {
         self.next_restart = Some(Instant::now() + Duration::from_secs(delay_secs));
         let (tx, rx) = mpsc::channel::<()>();
         self.shutdown_tx = tx;
-        self.handle = self.app.spawn(self.config.clone(), rx);
+        self.handle = self.app.spawn(
+            self.config.clone(),
+            rx,
+            self.on_first_data.clone(),
+            self.on_stale.clone(),
+        );
     }
 
     // Send shutdown, then wait up to 5 seconds before detaching to avoid
@@ -108,7 +179,12 @@ impl TargetSlot {
 
 // ── Spawn helpers ─────────────────────────────────────────────────────────────
 
-fn spawn_teleport_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
+fn spawn_teleport_target(
+    config: Config,
+    rx: Receiver<()>,
+    on_first_data: Option<DataCb>,
+    on_stale: Option<DataCb>,
+) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("iRacing Teleport Target".to_string())
         .spawn(move || {
@@ -120,6 +196,8 @@ fn spawn_teleport_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
                     high_priority: config.apps.high_priority,
                     busy_wait: config.apps.busy_wait,
                     stale_timeout_secs: config.advanced.stale_timeout_secs,
+                    on_first_data,
+                    on_stale,
                     ..teleport::TargetConfig::default()
                 },
                 rx,
@@ -130,7 +208,12 @@ fn spawn_teleport_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
         .expect("failed to spawn iRacing Teleport target thread")
 }
 
-fn spawn_ac_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
+fn spawn_ac_target(
+    config: Config,
+    rx: Receiver<()>,
+    on_first_data: Option<DataCb>,
+    on_stale: Option<DataCb>,
+) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("AC Teleport Target".to_string())
         .spawn(move || {
@@ -148,6 +231,8 @@ fn spawn_ac_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
                     stale_timeout: std::time::Duration::from_secs(
                         config.advanced.stale_timeout_secs,
                     ),
+                    on_first_data,
+                    on_stale,
                 },
                 rx,
             ) {
@@ -185,12 +270,36 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     // Issue #7: thread high_priority / busy_wait from config.
     let mut slots: Vec<TargetSlot> = Vec::new();
 
+    let tracker = ActiveGameTracker::new();
+    let simhub_path = config.simhub.path.clone();
+    let iracing_code = config.simhub.iracing.clone();
+    let ac_code = config.simhub.ac.clone();
+
+    let t1 = tracker.clone();
+    let p1 = simhub_path.clone();
+    let c1 = iracing_code.clone();
+    let iracing_on_first: DataCb = Arc::new(move || t1.try_activate(&c1, p1.as_deref()));
+    let t2 = tracker.clone();
+    let iracing_on_stale: DataCb = Arc::new(move || t2.deactivate());
+
+    let t3 = tracker.clone();
+    let p3 = simhub_path.clone();
+    let c3 = ac_code.clone();
+    let ac_on_first: DataCb = Arc::new(move || t3.try_activate(&c3, p3.as_deref()));
+    let t4 = tracker;
+    let ac_on_stale: DataCb = Arc::new(move || t4.deactivate());
+
     if config.apps.iracing_teleport_enabled {
         log.log(&format!(
             "  iRacing Teleport  :{}",
             config.ports.iracing_teleport
         ));
-        slots.push(TargetSlot::new(TargetApp::IracingTeleport, config.clone()));
+        slots.push(TargetSlot::new(
+            TargetApp::IracingTeleport,
+            config.clone(),
+            Some(iracing_on_first),
+            Some(iracing_on_stale),
+        ));
     }
 
     if config.apps.ac_teleport_enabled {
@@ -198,12 +307,22 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             "  AC Teleport       :{}",
             config.ports.ac_teleport
         ));
-        slots.push(TargetSlot::new(TargetApp::AcTeleport, config.clone()));
+        slots.push(TargetSlot::new(
+            TargetApp::AcTeleport,
+            config.clone(),
+            Some(ac_on_first),
+            Some(ac_on_stale),
+        ));
     }
 
     if config.apps.sim_relay_enabled {
         log.log("  Sim Relay          all game ports");
-        slots.push(TargetSlot::new(TargetApp::SimRelay, config.clone()));
+        slots.push(TargetSlot::new(
+            TargetApp::SimRelay,
+            config.clone(),
+            None,
+            None,
+        ));
     }
 
     if slots.is_empty() {
