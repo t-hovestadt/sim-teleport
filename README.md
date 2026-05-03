@@ -59,9 +59,23 @@ Or double-click `start-target.bat`.
 
 Both PCs must be on the same network. The gaming PC sends to the SimHub PC's IP.
 
+**Important:** Run `sim-bridge source` only on the **gaming PC** and `sim-bridge target` only on the **SimHub PC**. Running source on both PCs causes shared memory conflicts.
+
 **Double-click `sim-bridge.exe` directly** (no arguments): sim-bridge reads the `mode`
 field from `sim-bridge.toml` and starts as source or target automatically. This is
 the recommended way to use it after first-run setup — no BAT file required.
+
+---
+
+## Windows SmartScreen
+
+On first run, Windows may show "Windows protected your PC." This is normal for unsigned open-source software.
+
+To unblock: right-click the `.exe` → **Properties** → check **Unblock** at the bottom of the General tab → **OK**.
+
+Or click **More info** on the SmartScreen dialog, then **Run anyway**.
+
+If Windows Defender flags the file: Settings → Privacy & Security → Virus & threat protection → Manage settings → Exclusions → Add an exclusion → Folder → select the folder containing the `.exe`.
 
 ---
 
@@ -74,6 +88,8 @@ sim-bridge.exe uninstall         # removes the entry
 ```
 
 Run as Administrator for install/uninstall.
+
+When sim-bridge runs as a scheduled task and Windows shuts down, the process may not receive a clean shutdown signal. On next boot, SimHub may briefly show stale telemetry data until the target's stale timeout fires (default: 10 seconds). This is normal.
 
 ---
 
@@ -101,6 +117,8 @@ Created automatically on first run, next to `sim-bridge.exe`. Re-run `sim-bridge
 | `advanced.ac_poll_rate` | `60` | AC Teleport source poll rate (Hz) |
 | `advanced.datagram_size` | `65000` | iRacing Teleport datagram size in bytes |
 
+**Recommended install location:** Place `sim-bridge.exe` and `sim-bridge.toml` in a user-writable directory like `C:\Simracing\`, not in Program Files. The log file (`sim-bridge.log`) and config file are written next to the exe.
+
 ---
 
 ## Direct ethernet setup
@@ -116,26 +134,26 @@ On each PC: Network Adapter → Properties → IPv4 → Use the following IP add
 | Gaming (source) | `192.168.50.1` | `255.255.255.0` | *(leave blank)* |
 | SimHub (target) | `192.168.50.2` | `255.255.255.0` | *(leave blank)* |
 
-**2. Windows Firewall — allow inbound UDP on the gaming PC**
+**2. Windows Firewall**
 
-The easiest way — run `sim-bridge firewall` and paste the output into an elevated
-PowerShell. It reads your `sim-bridge.toml` and prints rules for all configured ports
-including every Sim Relay game.
+The easiest way — run `sim-bridge firewall` and paste the output into an elevated PowerShell. It reads your `sim-bridge.toml` and prints rules for both PCs.
 
 Or manually:
 
-```powershell
-# iRacing Teleport
-New-NetFirewallRule -DisplayName "sim-bridge iRacing (UDP 5000)" `
-    -Direction Inbound -Protocol UDP -LocalPort 5000 -Action Allow
+**On the gaming PC** (receives resync packets from the SimHub PC):
 
-# AC Teleport
-New-NetFirewallRule -DisplayName "sim-bridge AC Teleport (UDP 5001)" `
-    -Direction Inbound -Protocol UDP -LocalPort 5001 -Action Allow
+```powershell
+New-NetFirewallRule -DisplayName "sim-bridge source" `
+    -Direction Inbound -Protocol UDP -LocalPort 5000,5001 -Action Allow
 ```
 
-Sim Relay games use their native ports (20777 for F1, etc.) — add rules as needed
-for the specific games you play. Run `sim-bridge list` to see all ports.
+**On the SimHub PC** (receives telemetry and sim-relay game data from the gaming PC):
+
+```powershell
+New-NetFirewallRule -DisplayName "sim-bridge target" `
+    -Direction Inbound -Protocol UDP `
+    -LocalPort 5000,5001,5300,5606,9876,9999,15151,20777,23123,25555,30000,33740,34380,49003,63392 -Action Allow
+```
 
 **3. NIC settings (optional, for minimum latency)**
 
@@ -193,3 +211,33 @@ git submodule update --remote
 git add deps/
 git commit -m "Update submodules"
 ```
+
+### Versioning
+
+sim-bridge's git submodule pointers pin the exact version of each app included in each release. To see which versions are pinned:
+
+```
+git submodule status
+```
+
+When reporting bugs, include the output of `sim-bridge --version` and `git submodule status` (if building from source).
+
+Release workflow: update submodules, test, tag, release:
+
+```
+git submodule update --remote
+cargo test
+cargo build --release
+git add deps/
+git commit -m "Update submodules for vX.Y release"
+git tag vX.Y
+git push origin main --tags
+```
+
+---
+
+## Running SimHub on the gaming PC
+
+If you also run SimHub on the gaming PC (e.g. for a local dashboard), it reads shared memory directly from the game — sim-bridge source sends the same data to the remote SimHub PC independently. There is no conflict.
+
+However, do **not** run `sim-bridge target` on the gaming PC. The target creates its own shared memory maps with the same names as the game's maps, which conflicts with the game.
