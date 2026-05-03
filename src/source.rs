@@ -87,11 +87,15 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
         println!("Connected. Forwarding telemetry to {}", args.target);
 
-        // Allocate per-session compression buffers sized for this game.
-        let mut physics_cbuf = vec![0u8; get_maximum_output_size(active.game.max_physics_size)];
-        let mut graphics_cbuf = vec![0u8; get_maximum_output_size(active.game.max_graphics_size)];
-        let mut static_cbuf = vec![0u8; get_maximum_output_size(active.game.max_static_size)];
-        let mut static_snapshot = vec![0u8; active.game.max_static_size];
+        let ActiveMaps { game, mut maps } = active;
+
+        // Compression buffers sized from actual runtime map sizes (queried from the OS).
+        // Using GameConfig constants here would fail: the constants may be smaller than
+        // the real struct, causing compress_into to return "output is too small".
+        let mut physics_cbuf = vec![0u8; get_maximum_output_size(maps[0].size())];
+        let mut graphics_cbuf = vec![0u8; get_maximum_output_size(maps[1].size())];
+        let mut static_cbuf = vec![0u8; get_maximum_output_size(maps[2].size())];
+        let mut static_snapshot = vec![0u8; maps[2].size()];
 
         let mut sender = Sender::new();
         let mut stats = Stats::new("source");
@@ -107,8 +111,6 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
         let tick = Duration::from_micros(1_000_000 / args.poll_rate.max(1) as u64);
         let mut next_tick = Instant::now();
-
-        let ActiveMaps { game, mut maps } = active;
         let mut session_active = false;
 
         loop {

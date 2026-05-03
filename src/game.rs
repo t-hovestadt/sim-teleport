@@ -5,21 +5,21 @@ use crate::maps::SharedMap;
 
 /// Per-game shared memory configuration.
 ///
-/// The `max_*_size` fields are upper bounds used to pre-allocate LZ4 compression
-/// buffers on the source side. Actual region sizes are queried at runtime via
-/// VirtualQuery. The target ignores these — it allocates maps at `DUAL_MAP_SIZE`
-/// (64 KB) to accommodate any game's data with room for future struct growth.
+/// The `max_*_size` fields document known struct sizes. Source-side compression
+/// buffers are now sized from actual runtime map sizes (`SharedMap::size()`), so
+/// these values are informational. The target decompression buffer uses them as a
+/// lower bound, but `DUAL_MAP_SIZE` (64 KB) always dominates in practice.
 pub struct GameConfig {
     pub id: &'static str,
     pub name: &'static str,
     pub physics_map: &'static str,
     pub graphics_map: &'static str,
     pub static_map: &'static str,
-    /// Upper bound for source-side physics compression buffer allocation.
+    /// Known physics struct size in bytes.
     pub max_physics_size: usize,
-    /// Upper bound for source-side graphics compression buffer allocation.
+    /// Known graphics struct size in bytes.
     pub max_graphics_size: usize,
-    /// Upper bound for source-side static compression buffer allocation.
+    /// Known static struct size in bytes.
     pub max_static_size: usize,
 }
 
@@ -35,9 +35,10 @@ pub const AC1: GameConfig = GameConfig {
     physics_map: "Local\\acpmf_physics",
     graphics_map: "Local\\acpmf_graphics",
     static_map: "Local\\acpmf_static",
-    max_physics_size: 2048,
-    max_graphics_size: 4096,
-    max_static_size: 2048,
+    // SPageFilePhysics / SPageFileGraphics / SPageFileStatic from the AC SDK.
+    max_physics_size: 9312,
+    max_graphics_size: 9568,
+    max_static_size: 8128,
 };
 
 /// Assetto Corsa EVO.
