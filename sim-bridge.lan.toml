@@ -1,14 +1,25 @@
-# sim-bridge — LAN setup (zero config)
+# sim-bridge — LAN config (optional)
 # Both PCs on the same network through a router or switch.
+#
+# This file is OPTIONAL. sim-bridge works without it:
+#   sim-bridge.exe source       (gaming PC — multicast, all apps enabled)
+#   sim-bridge.exe target       (SimHub PC)
+#
+# Use this file if you want to persist settings across runs, or if you
+# prefer config-file style over CLI flags.
+#
 # Rename to sim-bridge.toml and place next to sim-bridge.exe.
-# On the SimHub PC, change mode to "target".
+# CLI flags (in the bat file) override values set here.
 
 mode = "source"
 
 [network]
 unicast = false
-source_ip = "0.0.0.0"
-target_ip = "0.0.0.0"
+# source_ip and target_ip are ignored for iRacing and AC (multicast handles those).
+# target_ip is used by Sim Relay to forward UDP game data (F1, Forza, BeamNG, etc.).
+# Set this to the SimHub PC's IP if you play any Sim Relay games.
+source_ip = "192.168.50.1"
+target_ip = "192.168.50.2"
 
 [ports]
 iracing_teleport = 5000

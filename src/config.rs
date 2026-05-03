@@ -121,20 +121,11 @@ impl Default for Config {
 const CONFIG_FILENAME: &str = "sim-bridge.toml";
 const APPDATA_DIR: &str = "sim-bridge";
 
-pub fn load() -> anyhow::Result<Config> {
-    match find_config() {
-        Some(path) => {
-            let text = fs::read_to_string(&path)?;
-            let config: Config =
-                toml::from_str(&text).map_err(|e| anyhow::anyhow!("config parse error: {e}"))?;
-            Ok(config)
-        }
-        None => {
-            println!("No config found. Running setup wizard...");
-            println!();
-            setup_wizard()
-        }
-    }
+/// Load config from disk without triggering the wizard. Returns None if no file exists.
+pub fn try_load() -> Option<Config> {
+    let path = find_config()?;
+    let text = fs::read_to_string(&path).ok()?;
+    toml::from_str(&text).ok()
 }
 
 pub fn write_config(config: &Config, path: &PathBuf) -> anyhow::Result<()> {

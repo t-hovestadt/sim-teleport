@@ -32,10 +32,78 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Gaming PC — auto-detects running games and starts the correct telemetry app.
-    Source,
+    Source {
+        /// Target PC IP address. Required for Sim Relay forwarding; also used for unicast.
+        #[arg(long)]
+        target: Option<String>,
+        /// This PC's bind IP address. Required for unicast mode.
+        #[arg(long)]
+        bind: Option<String>,
+        /// Unicast mode — use for direct ethernet (point-to-point), not LAN.
+        #[arg(long)]
+        unicast: bool,
+        /// Set HIGH_PRIORITY_CLASS on telemetry threads.
+        #[arg(long)]
+        high_priority: bool,
+        /// Spin-wait instead of sleeping (lower jitter, burns one CPU core).
+        #[arg(long)]
+        busy_wait: bool,
+        /// iRacing Teleport port.
+        #[arg(long, value_name = "PORT")]
+        iracing_port: Option<u16>,
+        /// AC Teleport port.
+        #[arg(long, value_name = "PORT")]
+        ac_port: Option<u16>,
+        /// Disable iRacing Teleport.
+        #[arg(long)]
+        no_iracing: bool,
+        /// Disable AC Teleport.
+        #[arg(long)]
+        no_ac: bool,
+        /// Disable Sim Relay.
+        #[arg(long)]
+        no_relay: bool,
+        /// Process scan interval in seconds.
+        #[arg(long, value_name = "SECS")]
+        scan_interval: Option<u64>,
+        /// Grace period after game closes before stopping.
+        #[arg(long, value_name = "SECS")]
+        drain: Option<u64>,
+    },
     /// SimHub PC — starts all three telemetry receivers simultaneously.
-    Target,
-    /// Interactive first-run setup wizard. Writes sim-bridge.toml.
+    Target {
+        /// Source (gaming) PC IP address. Passed to Sim Relay for filtering.
+        #[arg(long)]
+        source: Option<String>,
+        /// Unicast mode — use for direct ethernet (point-to-point), not LAN.
+        #[arg(long)]
+        unicast: bool,
+        /// Set HIGH_PRIORITY_CLASS on telemetry threads.
+        #[arg(long)]
+        high_priority: bool,
+        /// Spin-wait instead of sleeping (lower jitter, burns one CPU core).
+        #[arg(long)]
+        busy_wait: bool,
+        /// iRacing Teleport port.
+        #[arg(long, value_name = "PORT")]
+        iracing_port: Option<u16>,
+        /// AC Teleport port.
+        #[arg(long, value_name = "PORT")]
+        ac_port: Option<u16>,
+        /// Disable iRacing Teleport.
+        #[arg(long)]
+        no_iracing: bool,
+        /// Disable AC Teleport.
+        #[arg(long)]
+        no_ac: bool,
+        /// Disable Sim Relay.
+        #[arg(long)]
+        no_relay: bool,
+        /// Enable FanaLab shared-memory output.
+        #[arg(long)]
+        fanalab: bool,
+    },
+    /// Interactive setup wizard. Writes sim-bridge.toml (optional — CLI flags work without it).
     Setup,
     /// Add sim-bridge to Windows startup (Task Scheduler, runs on logon).
     Install {
@@ -58,19 +126,91 @@ fn main() {
         Some(c) => c,
         // No subcommand: auto-detect from saved config mode, default to source.
         None => {
-            let mode = config::load()
+            let mode = config::try_load()
                 .map(|c| c.mode)
-                .unwrap_or_else(|_| "source".to_string());
+                .unwrap_or_else(|| "source".to_string());
             if mode == "target" {
-                Cmd::Target
+                Cmd::Target {
+                    source: None,
+                    unicast: false,
+                    high_priority: false,
+                    busy_wait: false,
+                    iracing_port: None,
+                    ac_port: None,
+                    no_iracing: false,
+                    no_ac: false,
+                    no_relay: false,
+                    fanalab: false,
+                }
             } else {
-                Cmd::Source
+                Cmd::Source {
+                    target: None,
+                    bind: None,
+                    unicast: false,
+                    high_priority: false,
+                    busy_wait: false,
+                    iracing_port: None,
+                    ac_port: None,
+                    no_iracing: false,
+                    no_ac: false,
+                    no_relay: false,
+                    scan_interval: None,
+                    drain: None,
+                }
             }
         }
     };
     match cmd {
-        Cmd::Source => run_source(),
-        Cmd::Target => run_target(),
+        Cmd::Source {
+            target,
+            bind,
+            unicast,
+            high_priority,
+            busy_wait,
+            iracing_port,
+            ac_port,
+            no_iracing,
+            no_ac,
+            no_relay,
+            scan_interval,
+            drain,
+        } => run_source(
+            target,
+            bind,
+            unicast,
+            high_priority,
+            busy_wait,
+            iracing_port,
+            ac_port,
+            no_iracing,
+            no_ac,
+            no_relay,
+            scan_interval,
+            drain,
+        ),
+        Cmd::Target {
+            source,
+            unicast,
+            high_priority,
+            busy_wait,
+            iracing_port,
+            ac_port,
+            no_iracing,
+            no_ac,
+            no_relay,
+            fanalab,
+        } => run_target(
+            source,
+            unicast,
+            high_priority,
+            busy_wait,
+            iracing_port,
+            ac_port,
+            no_iracing,
+            no_ac,
+            no_relay,
+            fanalab,
+        ),
         Cmd::Setup => run_setup(),
         Cmd::Install { mode } => run_install(mode),
         Cmd::Uninstall => run_uninstall(),
@@ -79,7 +219,21 @@ fn main() {
     }
 }
 
-fn run_source() {
+#[allow(clippy::too_many_arguments)]
+fn run_source(
+    target: Option<String>,
+    bind: Option<String>,
+    unicast: bool,
+    high_priority: bool,
+    busy_wait: bool,
+    iracing_port: Option<u16>,
+    ac_port: Option<u16>,
+    no_iracing: bool,
+    no_ac: bool,
+    no_relay: bool,
+    scan_interval: Option<u64>,
+    drain: Option<u64>,
+) {
     let log = logger::Logger::open().unwrap_or_else(|e| {
         eprintln!("Warning: could not open log file: {e}");
         logger::Logger::stderr()
@@ -88,13 +242,45 @@ fn run_source() {
         "sim-bridge v{VERSION} — source (teleport={TELEPORT_VERSION}, ac={AC_VERSION}, relay={RELAY_VERSION})"
     ));
 
-    let cfg = match config::load() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Config error: {e}");
-            std::process::exit(1);
-        }
-    };
+    // Priority: CLI flags > toml > built-in defaults.
+    let mut cfg = config::try_load().unwrap_or_default();
+
+    if let Some(t) = target {
+        cfg.network.target_ip = t;
+    }
+    if let Some(b) = bind {
+        cfg.network.source_ip = b;
+    }
+    if unicast {
+        cfg.network.unicast = true;
+    }
+    if high_priority {
+        cfg.apps.high_priority = true;
+    }
+    if busy_wait {
+        cfg.apps.busy_wait = true;
+    }
+    if let Some(p) = iracing_port {
+        cfg.ports.iracing_teleport = p;
+    }
+    if let Some(p) = ac_port {
+        cfg.ports.ac_teleport = p;
+    }
+    if no_iracing {
+        cfg.apps.iracing_teleport_enabled = false;
+    }
+    if no_ac {
+        cfg.apps.ac_teleport_enabled = false;
+    }
+    if no_relay {
+        cfg.apps.sim_relay_enabled = false;
+    }
+    if let Some(s) = scan_interval {
+        cfg.detection.scan_interval = s;
+    }
+    if let Some(d) = drain {
+        cfg.detection.drain_seconds = d;
+    }
 
     let (tx, rx) = mpsc::channel::<()>();
     ctrlc::set_handler(move || {
@@ -106,7 +292,18 @@ fn run_source() {
     source::run(cfg, &log, rx);
 }
 
-fn run_target() {
+fn run_target(
+    source: Option<String>,
+    unicast: bool,
+    high_priority: bool,
+    busy_wait: bool,
+    iracing_port: Option<u16>,
+    ac_port: Option<u16>,
+    no_iracing: bool,
+    no_ac: bool,
+    no_relay: bool,
+    fanalab: bool,
+) {
     let log = logger::Logger::open().unwrap_or_else(|e| {
         eprintln!("Warning: could not open log file: {e}");
         logger::Logger::stderr()
@@ -115,13 +312,39 @@ fn run_target() {
         "sim-bridge v{VERSION} — target (teleport={TELEPORT_VERSION}, ac={AC_VERSION}, relay={RELAY_VERSION})"
     ));
 
-    let cfg = match config::load() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Config error: {e}");
-            std::process::exit(1);
-        }
-    };
+    // Priority: CLI flags > toml > built-in defaults.
+    let mut cfg = config::try_load().unwrap_or_default();
+
+    if let Some(s) = source {
+        cfg.network.source_ip = s;
+    }
+    if unicast {
+        cfg.network.unicast = true;
+    }
+    if high_priority {
+        cfg.apps.high_priority = true;
+    }
+    if busy_wait {
+        cfg.apps.busy_wait = true;
+    }
+    if let Some(p) = iracing_port {
+        cfg.ports.iracing_teleport = p;
+    }
+    if let Some(p) = ac_port {
+        cfg.ports.ac_teleport = p;
+    }
+    if no_iracing {
+        cfg.apps.iracing_teleport_enabled = false;
+    }
+    if no_ac {
+        cfg.apps.ac_teleport_enabled = false;
+    }
+    if no_relay {
+        cfg.apps.sim_relay_enabled = false;
+    }
+    if fanalab {
+        cfg.apps.fanalab = true;
+    }
 
     let (tx, rx) = mpsc::channel::<()>();
     ctrlc::set_handler(move || {
@@ -145,9 +368,9 @@ fn run_setup() {
 
 fn run_install(mode_arg: Option<String>) {
     let mode = mode_arg.unwrap_or_else(|| {
-        config::load()
+        config::try_load()
             .map(|c| c.mode)
-            .unwrap_or_else(|_| "source".to_string())
+            .unwrap_or_else(|| "source".to_string())
     });
 
     if mode != "source" && mode != "target" {
@@ -169,7 +392,7 @@ fn run_uninstall() {
 }
 
 fn run_list() {
-    let cfg = config::load().unwrap_or_default();
+    let cfg = config::try_load().unwrap_or_default();
     println!("sim-bridge — Supported Games");
     println!();
     println!("Shared Memory (process-detected, auto-started by sim-bridge source):");
@@ -200,7 +423,7 @@ fn run_list() {
 }
 
 fn run_firewall() {
-    let cfg = config::load().unwrap_or_default();
+    let cfg = config::try_load().unwrap_or_default();
     let iracing_port = cfg.ports.iracing_teleport;
     let ac_port = cfg.ports.ac_teleport;
 
