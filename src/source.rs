@@ -231,6 +231,18 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 }
             }
 
+            // Managed-mode safety exit: if no session activity for 5 minutes,
+            // break and re-open maps. Primary exit is sim-bridge sending shutdown;
+            // this fires only if that signal is lost (e.g. sim-bridge crashed).
+            if args.game.is_some() && last_nonzero_tick.elapsed() >= Duration::from_secs(300) {
+                eprintln!(
+                    "[{}] Safety timeout: no session for 5 min — reconnecting",
+                    game.name
+                );
+                stats.print_summary();
+                continue 'outer;
+            }
+
             stats.maybe_print();
 
             // ── Tick timing ──────────────────────────────────────────────────────

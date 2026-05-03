@@ -190,6 +190,7 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
     let mut last_update = Instant::now();
     let mut stats = Stats::new("target");
     let mut seq_start: Option<Instant> = None;
+    let mut first_frame_logged = false;
 
     loop {
         if shutdown.try_recv().is_ok() {
@@ -268,6 +269,10 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 };
 
                 if let Some((clen, decomp_len)) = compressed_len {
+                    if !first_frame_logged {
+                        println!("[AC Teleport] First frame received ({decomp_len} bytes)");
+                        first_frame_logged = true;
+                    }
                     if let Some(start) = seq_start.take() {
                         let transit_us = start.elapsed().as_micros() as u64;
                         stats.record(
