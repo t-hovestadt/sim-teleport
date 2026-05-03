@@ -92,9 +92,7 @@ fn detect_shmem_game(
                     });
                 }
                 if verbose {
-                    log.log(
-                        "[scan] AC EVO tiebreaker: process not found — ghost maps, skipping",
-                    );
+                    log.log("[scan] AC EVO tiebreaker: process not found — ghost maps, skipping");
                 }
             }
             None => {}
@@ -105,7 +103,9 @@ fn detect_shmem_game(
                 // ACC and AC1 share the same map names — use process to distinguish.
                 if scanner.is_running(&["acc.exe"]) {
                     if verbose {
-                        log.log("[scan] AC1/ACC tiebreaker: acc.exe found — Assetto Corsa Competizione");
+                        log.log(
+                            "[scan] AC1/ACC tiebreaker: acc.exe found — Assetto Corsa Competizione",
+                        );
                     }
                     return Some(Detection {
                         game: ShmemGame::Acc,
@@ -152,7 +152,10 @@ fn detect_shmem_game(
     }
     // sim-relay UDP games (lowest priority — only when shmem games are absent)
     if cfg.apps.sim_relay_enabled {
-        let game_count = sim_relay::games::GAMES.iter().filter(|g| !g.console).count();
+        let game_count = sim_relay::games::GAMES
+            .iter()
+            .filter(|g| !g.console)
+            .count();
         if verbose {
             log.log(&format!(
                 "[scan] Process scan: checking {game_count} sim-relay game entries"
@@ -544,7 +547,15 @@ fn run_detection_cycle(
     }
 
     // running_ac is None — this function is not called while Running.
-    detect_shmem_game(iracing_detected, &ac_probe, None, scanner, config, verbose, log)
+    detect_shmem_game(
+        iracing_detected,
+        &ac_probe,
+        None,
+        scanner,
+        config,
+        verbose,
+        log,
+    )
 }
 
 // ── Main source loop ──────────────────────────────────────────────────────────

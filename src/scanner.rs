@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+#[cfg(windows)]
 use std::time::Duration;
 
 use crate::logger::Logger;
@@ -120,6 +121,7 @@ pub fn probe_iracing_event(verbose: bool, log: &Logger) -> bool {
 // ── AC shared-memory probing ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub enum ShmemDetection {
     /// packetId advanced between two reads — game is in an active session.
     Live,
@@ -143,7 +145,9 @@ pub fn probe_ac_maps(verbose: bool, log: &Logger) -> AcProbeResult {
     if verbose {
         match evo_raw {
             Some((ShmemDetection::Live, id0, id1)) => {
-                log.log(&format!("[scan] AC EVO maps: found (LIVE, packetId {id0} → {id1})"));
+                log.log(&format!(
+                    "[scan] AC EVO maps: found (LIVE, packetId {id0} → {id1})"
+                ));
             }
             Some((ShmemDetection::Stale, id0, _)) => {
                 log.log(&format!(
@@ -154,7 +158,9 @@ pub fn probe_ac_maps(verbose: bool, log: &Logger) -> AcProbeResult {
         }
         match ac1_raw {
             Some((ShmemDetection::Live, id0, id1)) => {
-                log.log(&format!("[scan] AC1 maps: found (LIVE, packetId {id0} → {id1})"));
+                log.log(&format!(
+                    "[scan] AC1 maps: found (LIVE, packetId {id0} → {id1})"
+                ));
             }
             Some((ShmemDetection::Stale, id0, _)) => {
                 log.log(&format!(
