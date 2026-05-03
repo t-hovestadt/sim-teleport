@@ -229,9 +229,15 @@ pub static GAMES: &[GameDef] = &[
         name: "Wreckfest 2",
         family: "Wreckfest",
         default_port: 23123,
-        process_names: &["Wreckfest2.exe"],
+        process_names: &[
+            "Wreckfest2.exe",
+            "Wreckfest2_BE.exe",              // BattlEye anti-cheat launcher
+            "Wreckfest2_EAC.exe",             // EasyAntiCheat launcher
+            "Wreckfest2-Win64-Shipping.exe",  // Unreal Engine shipping binary
+        ],
         console: false,
-        notes: "Telemetry sent automatically — no in-game config needed.",
+        notes: "Settings > Gameplay > Telemetry > On, port 23123. \
+                If process is detected but no data flows, check this setting.",
     },
     // ── Gran Turismo (port 33740) ─────────────────────────────────────────────
     // Console titles — PS4/PS5 only; no PC process to detect.

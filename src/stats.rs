@@ -40,27 +40,34 @@ impl RelayStats {
     }
 
     /// Print a one-line stats summary if the print interval has elapsed.
+    /// Inactive relays (no process detected or no packets received) are silently
+    /// skipped — printing "[game]  inactive" for every unsupported game every 5 s
+    /// floods the console and buries the lines that actually matter.
     pub fn maybe_print(&mut self, name: &str, active: bool) {
         let elapsed = self.window_start.elapsed();
         if elapsed < PRINT_INTERVAL {
             return;
         }
-        if !active || self.window_packets == 0 {
-            println!("[{name}]  inactive");
-        } else {
-            let secs = elapsed.as_secs_f64();
-            let pkt_s = self.window_packets as f64 / secs;
-            let kb_s = self.window_bytes as f64 / 1024.0 / secs;
-            let avg_b = self.window_bytes / self.window_packets;
-            let avg_fwd_us = self.window_latency_us / self.window_packets;
-            println!(
-                "[{name}]  {pkt_s:.1} pkt/s   {kb_s:.1} KB/s   avg {avg_b} b/pkt   {avg_fwd_us} \u{b5}s fwd"
-            );
-        }
+        // Reset the window unconditionally so the next interval starts clean.
+        let packets = self.window_packets;
+        let bytes = self.window_bytes;
+        let latency_us = self.window_latency_us;
         self.window_packets = 0;
         self.window_bytes = 0;
         self.window_latency_us = 0;
         self.window_start = Instant::now();
+
+        if !active || packets == 0 {
+            return;
+        }
+        let secs = elapsed.as_secs_f64();
+        let pkt_s = packets as f64 / secs;
+        let kb_s = bytes as f64 / 1024.0 / secs;
+        let avg_b = bytes / packets;
+        let avg_fwd_us = latency_us / packets;
+        println!(
+            "[{name}]  {pkt_s:.1} pkt/s   {kb_s:.1} KB/s   avg {avg_b} b/pkt   {avg_fwd_us} \u{b5}s fwd"
+        );
     }
 
     pub fn print_summary(&self, name: &str, elapsed: Duration) {
