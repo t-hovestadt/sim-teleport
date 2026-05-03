@@ -236,8 +236,10 @@ pub static GAMES: &[GameDef] = &[
             "Wreckfest2-Win64-Shipping.exe", // Unreal Engine shipping binary
         ],
         console: false,
-        notes: "Settings > Gameplay > Telemetry > On, port 23123. \
-                If process is detected but no data flows, check this setting.",
+        notes: "Requires config.json in the save folder: \
+                %USERPROFILE%\\Documents\\My Games\\Wreckfest 2\\<ProfileID>\\savegame\\telemetry\\config.json \
+                with content: {\"udp\":[{\"enabled\":1,\"ip\":\"127.0.0.1\",\"port\":\"23123\"}]}. \
+                The telemetry folder and config.json must be created manually.",
     },
     // ── Gran Turismo (port 33740) ─────────────────────────────────────────────
     // Console titles — PS4/PS5 only; no PC process to detect.

@@ -138,7 +138,25 @@ Enable **UDP Frequency > 0** in game settings.
 
 Game Options → Settings → **Telemetry Settings** → UDP On, port 20777. (F1 games) or Hardware Settings → UDP (DiRT / WRC).
 
-**Wreckfest 2** (port 23123) — `wreckfest2` — telemetry sent automatically.
+**Wreckfest 2** (port 23123) — `wreckfest2` — requires a config file (not automatic).
+
+Create the folder and file manually:
+
+Path: `%USERPROFILE%\Documents\My Games\Wreckfest 2\<ProfileID>\savegame\telemetry\config.json`
+
+```json
+{
+  "udp": [
+    {
+      "enabled": 1,
+      "ip": "127.0.0.1",
+      "port": "23123"
+    }
+  ]
+}
+```
+
+`<ProfileID>` is a Steam ID number — look for the numbered folder inside `My Games\Wreckfest 2\`. Create the `telemetry` folder if it doesn't exist. Restart the game after creating the file.
 
 **Gran Turismo** (port 33740 — PS4/PS5 console, no PC process to detect)
 
