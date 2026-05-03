@@ -292,6 +292,7 @@ fn run_source(
     source::run(cfg, &log, rx);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_target(
     source: Option<String>,
     unicast: bool,
