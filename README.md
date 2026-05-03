@@ -161,14 +161,14 @@ with exponential backoff.
 
 ## Supported games
 
-**Shared memory (auto-detected by process name, started by sim-bridge):**
+**Shared memory (auto-detected, started by sim-bridge):**
 
-| Game | Process |
-|------|---------|
-| iRacing | `iRacingSim64DX11.exe` |
-| Assetto Corsa EVO | `AssettoCorsa_EVO.exe` |
-| Assetto Corsa | `acs.exe` |
-| Assetto Corsa Competizione | `acc.exe` |
+| Game | Detection method |
+|------|-----------------|
+| iRacing | Named event probe — `Local\IRSDKDataValidEvent` exists only while iRacing is running |
+| Assetto Corsa EVO | Shared-memory probe — `packetId` liveness check on `acevo_pmf_physics` |
+| Assetto Corsa | Shared-memory probe — `packetId` liveness check on `acpmf_physics` |
+| Assetto Corsa Competizione | Shared-memory probe — same as AC1, with `acc.exe` process tiebreaker |
 
 Only one shared-memory game runs at a time on the source. If you close one
 and open another, sim-bridge switches automatically within one scan interval (default 3 s).
@@ -197,7 +197,7 @@ BeamNG, Wreckfest 2, DiRT Rally 2.0, Euro/American Truck Simulator, and more.
 | `--no-iracing` | Disable iRacing Teleport. |
 | `--no-ac` | Disable AC Teleport. |
 | `--no-relay` | Disable Sim Relay. |
-| `--scan-interval <SECS>` | How often to scan for running game processes (default: 3 s). |
+| `--scan-interval <SECS>` | How often to run the game detection cycle (default: 3 s). |
 | `--drain <SECS>` | Grace period to keep forwarding after a game closes (default: 20 s). |
 
 ### `sim-bridge target [OPTIONS]`
@@ -280,7 +280,7 @@ default mode to register.
 | `network.unicast` | `false` | `true` = direct ethernet (no multicast). `false` = LAN (multicast, no IP config needed for iRacing/AC). |
 | `ports.iracing_teleport` | `5000` | iRacing Teleport UDP port. |
 | `ports.ac_teleport` | `5001` | AC Teleport UDP port. |
-| `detection.scan_interval` | `3` | Process scan interval in seconds (source only). |
+| `detection.scan_interval` | `3` | Detection cycle interval in seconds (source only). |
 | `detection.drain_seconds` | `20` | Grace period after game closes before stopping the telemetry thread. |
 | `apps.iracing_teleport_enabled` | `true` | Set `false` to disable iRacing Teleport entirely. |
 | `apps.ac_teleport_enabled` | `true` | Set `false` to disable AC Teleport entirely. |
@@ -312,7 +312,7 @@ shared memory maps with the same names as the game, which conflicts with the gam
 
 ## Building from source
 
-Requires Rust (stable). Windows is required for process scanning (ToolHelp32 API).
+Requires Rust (stable). Windows is required for the APIs used for game detection (Named Events, shared-memory sections, ToolHelp32).
 
 ```
 git clone --recurse-submodules https://github.com/t-hovestadt/sim-bridge.git
