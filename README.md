@@ -6,6 +6,21 @@ Single binary for your gaming PC (source) and SimHub PC (target). Auto-detects r
 
 ---
 
+## Download
+
+Download from the [Releases](../../releases/latest) page:
+
+| File | Purpose |
+|------|---------|
+| `sim-bridge.exe` | The app — copy to both PCs |
+| `start-source.bat` | Double-click on the gaming PC |
+| `start-target.bat` | Double-click on the SimHub PC |
+| `sim-bridge.example.toml` | Rename to `sim-bridge.toml` and edit your IPs |
+
+Place all files in the same folder on each PC (e.g., `C:\Simracing\`).
+
+---
+
 ## Architecture
 
 ```

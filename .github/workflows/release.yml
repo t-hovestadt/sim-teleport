@@ -1,8 +1,12 @@
 name: Release
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -10,38 +14,66 @@ env:
 jobs:
   build:
     name: Build Release Asset
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-gnu
+          targets: x86_64-pc-windows-msvc
 
-      - name: Install MinGW
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Package release
+        shell: pwsh
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64
+          New-Item -ItemType Directory -Path release | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/sim-bridge.exe release/
+          Copy-Item start-source.bat release/
+          Copy-Item start-target.bat release/
+          Copy-Item README.md release/
+          @"
+          # sim-bridge configuration — edit before first run
+          # Rename this file to sim-bridge.toml and place it next to sim-bridge.exe
+          mode = "source"
 
-      - name: Build
-        run: cargo build --release --target x86_64-pc-windows-gnu
+          [network]
+          source_ip = "192.168.50.1"
+          target_ip = "192.168.50.2"
 
-      - name: Package
-        run: |
-          mkdir -p release
-          cp target/x86_64-pc-windows-gnu/release/sim-bridge.exe release/
-          cp start-source.bat release/
-          cp start-target.bat release/
-          cp README.md release/
+          [ports]
+          iracing_teleport = 5000
+          ac_teleport = 5001
 
-      - name: Upload
+          [detection]
+          scan_interval = 3
+          drain_seconds = 20
+
+          [apps]
+          iracing_teleport_enabled = true
+          ac_teleport_enabled = true
+          sim_relay_enabled = true
+          high_priority = false
+          busy_wait = false
+          fanalab = false
+
+          [advanced]
+          stale_timeout_secs = 10
+          reconnect_timeout_secs = 5
+          ac_poll_rate = 60
+          datagram_size = 65000
+          "@ | Out-File -Encoding utf8 release/sim-bridge.example.toml
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release/sim-bridge.exe
             release/start-source.bat
             release/start-target.bat
+            release/sim-bridge.example.toml
             release/README.md
+          generate_release_notes: true
