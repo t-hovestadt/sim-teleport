@@ -1,12 +1,10 @@
-name: CI/CD
+name: CI
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  release:
-    types: [ "created" ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -50,33 +48,3 @@ jobs:
             target/x86_64-pc-windows-gnu/release/target.exe
             target/x86_64-pc-windows-gnu/release/ac-teleport.exe
           retention-days: 7
-
-  release:
-    name: Build Release Asset
-    runs-on: ubuntu-latest
-    if: github.event_name == 'release'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-gnu
-
-      - name: Install MinGW
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64
-
-      - name: Build release binary
-        run: cargo build --target x86_64-pc-windows-gnu --release
-
-      - name: Create release asset
-        run: |
-          cd target/x86_64-pc-windows-gnu/release
-          zip ac-teleport.zip source.exe target.exe ac-teleport.exe
-
-      - name: Upload release asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: target/x86_64-pc-windows-gnu/release/ac-teleport.zip
