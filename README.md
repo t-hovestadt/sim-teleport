@@ -1,6 +1,6 @@
 # sim-bridge
 
-Single binary for your gaming PC (source) and SimHub PC (target). Auto-detects running games, starts the right telemetry app in-process, and streams data over LAN. No manual configuration after first run.
+Single binary for your gaming PC (source) and SimHub PC (target). Auto-detects running games, starts the right telemetry engine in-process, and streams data over LAN or direct ethernet.
 
 **Supported games:** iRacing, Assetto Corsa, AC EVO, ACC, F1 series, Forza, BeamNG, PCars, Wreckfest, and more.
 
@@ -15,13 +15,10 @@ Download from the [Releases](../../releases/latest) page:
 | `sim-bridge.exe` | The app — copy to both PCs |
 | `start-source.bat` | Double-click on the gaming PC |
 | `start-target.bat` | Double-click on the SimHub PC |
-| `sim-bridge.lan.toml` | Config template for LAN (zero config) |
-| `sim-bridge.direct.toml` | Config template for direct ethernet |
+| `sim-bridge.lan.toml` | Config template for LAN (multicast) |
+| `sim-bridge.direct.toml` | Config template for direct ethernet (unicast) |
 
-Pick the config matching your setup, rename it to `sim-bridge.toml`, and
-place it next to `sim-bridge.exe` on each PC. For direct ethernet, edit
-the IPs. On the SimHub PC, set `mode = "target"` and optionally
-`high_priority = true` and `busy_wait = true`.
+Pick the config matching your setup, rename it to `sim-bridge.toml`, and place it next to `sim-bridge.exe` on each PC. For direct ethernet, edit the IPs. On the SimHub PC, set `mode = "target"`.
 
 ---
 
@@ -38,7 +35,7 @@ Source PC (gaming)              →    Target PC (SimHub)
          └─ sim_relay::source::run
 ```
 
-The three telemetry engines live in separate repos and are included here as git submodules:
+The three telemetry engines live in separate repos and are included as git submodules:
 
 | Submodule | Path | Purpose |
 |-----------|------|---------|
@@ -58,21 +55,19 @@ The three telemetry engines live in separate repos and are included here as git 
 | Assetto Corsa Competizione | AC Teleport | `acc.exe` |
 | F1 series, Forza, BeamNG, PCars, Wreckfest, and more | Sim Relay | built-in |
 
-Run `sim-bridge list` for the full game list including all sim-relay UDP games.
+Run `sim-bridge list` for the full game list including all Sim Relay UDP games.
 
 ---
 
-## LAN setup (default, zero config)
+## LAN setup (home router or switch)
 
-Both PCs on the same network (home router or switch):
+Both PCs on the same network:
 
 1. Copy `sim-bridge.exe`, `start-source.bat`, and `start-target.bat` to a folder on each PC
 2. Gaming PC: double-click `start-source.bat`
 3. SimHub PC: double-click `start-target.bat`
 
-No IP addresses, no config file needed. Uses multicast (`239.255.0.1`).
-
-On first run a `sim-bridge.toml` is written next to the exe — you can leave it unchanged.
+On first run, a short wizard asks which PC role this is (source or target). iRacing and AC telemetry use multicast (`239.255.0.1`) — no IPs needed. If Sim Relay is enabled (default), the wizard also asks for the SimHub PC's IP so it can forward UDP game data.
 
 ---
 
@@ -99,8 +94,14 @@ On each PC: Network Adapter → Properties → IPv4 → Use the following IP add
 
 **3. Windows Firewall**
 
-Run `sim-bridge firewall` and paste the output into an elevated PowerShell on each PC.
-It reads your `sim-bridge.toml` and prints the exact rules needed.
+Run `sim-bridge firewall` on either PC. It prints two labeled sections — apply each section only to the PC it describes:
+
+```
+sim-bridge.exe firewall
+```
+
+Paste the **Gaming PC** block into an elevated PowerShell on the gaming PC.  
+Paste the **SimHub PC** block into an elevated PowerShell on the SimHub PC.
 
 **4. NIC settings (optional, for minimum latency)**
 
@@ -129,12 +130,12 @@ If Windows Defender flags the file: Settings → Privacy & Security → Virus & 
 ## Auto-start (Task Scheduler)
 
 ```
-sim-bridge.exe install           # registers at logon for mode stored in config
-sim-bridge.exe install --mode target  # force target mode
-sim-bridge.exe uninstall         # removes the entry
+sim-bridge.exe install                   # registers for the mode in sim-bridge.toml
+sim-bridge.exe install --mode target     # force target mode
+sim-bridge.exe uninstall                 # removes the entry
 ```
 
-Run as Administrator for install/uninstall.
+Run as Administrator for install/uninstall. The task is registered as **SimBridge** in Task Scheduler and runs at highest privilege. To verify or remove it manually, open Task Scheduler and look for `SimBridge`.
 
 When sim-bridge runs as a scheduled task and Windows shuts down, the process may not receive a clean shutdown signal. On next boot, SimHub may briefly show stale telemetry data until the target's stale timeout fires (default: 10 seconds). This is normal.
 
@@ -142,7 +143,7 @@ When sim-bridge runs as a scheduled task and Windows shuts down, the process may
 
 ## Configuration — `sim-bridge.toml`
 
-Created automatically on first run, next to `sim-bridge.exe`. Re-run `sim-bridge setup` to regenerate it.
+sim-bridge looks for `sim-bridge.toml` next to the exe first, then in `%APPDATA%\sim-bridge\sim-bridge.toml`. The file is created automatically the first time you run the setup wizard. Re-run `sim-bridge setup` to regenerate it.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -175,29 +176,25 @@ Created automatically on first run, next to `sim-bridge.exe`. Re-run `sim-bridge
 sim-bridge.exe [SUBCOMMAND]
 ```
 
-If no subcommand is given, sim-bridge reads `mode` from `sim-bridge.toml` and
-auto-starts as source or target (double-click friendly).
+If no subcommand is given, sim-bridge reads `mode` from `sim-bridge.toml` and auto-starts as source or target (double-click friendly). If no config file exists, the setup wizard runs first and the app continues in the configured mode.
 
 | Subcommand | Description |
 |------------|-------------|
 | `source` | Gaming PC: scan for running games, start the matching telemetry subsystem |
 | `target` | SimHub PC: start all three telemetry receivers simultaneously |
-| `setup` | Interactive wizard — writes `sim-bridge.toml` next to the exe |
+| `setup` | Interactive wizard — writes `sim-bridge.toml`, then exits |
 | `install [--mode source\|target]` | Register as a Windows logon task (run as Administrator) |
 | `uninstall` | Remove the logon task (run as Administrator) |
 | `list` | Print all supported games with their process names and ports |
 | `firewall` | Print PowerShell `New-NetFirewallRule` commands for all configured ports |
 
-**Examples:**
+Note: `sim-bridge setup` exits after writing the config. `sim-bridge source` and `sim-bridge target` run the wizard on first use and then continue running.
+
+**Version output** includes the pinned versions of all three telemetry engines:
 
 ```
-sim-bridge.exe source
-sim-bridge.exe target
-sim-bridge.exe setup
-sim-bridge.exe install --mode target
-sim-bridge.exe uninstall
-sim-bridge.exe list
-sim-bridge.exe firewall
+sim-bridge --version
+sim-bridge 0.1.3 (iracing-teleport 1.0.9, ac-teleport 0.2.0, sim-relay 0.1.4)
 ```
 
 ---
@@ -206,10 +203,7 @@ sim-bridge.exe firewall
 
 sim-bridge's own log lines are timestamped: `[16:00:05] [iRacing] Detected — starting`.
 
-Each subsystem (iRacing Teleport, AC Teleport, Sim Relay) also prints its own status
-lines directly to stdout without timestamps. This is expected — the subsystem output
-comes from the library crates and uses their own format. The sim-bridge timestamped
-lines are the authoritative state indicator.
+Each subsystem (iRacing Teleport, AC Teleport, Sim Relay) also prints its own status lines directly to stdout without timestamps. This is expected — the subsystem output comes from the library crates and uses their own format. The sim-bridge timestamped lines are the authoritative state indicator.
 
 ---
 
@@ -239,7 +233,7 @@ git commit -m "Update submodules"
 
 ### Versioning
 
-sim-bridge's git submodule pointers pin the exact version of each app included in each release. To see which versions are pinned:
+sim-bridge's git submodule pointers pin the exact version of each engine included in each release. To see which versions are pinned:
 
 ```
 git submodule status
