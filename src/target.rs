@@ -1,6 +1,6 @@
 use std::io::{self, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -9,6 +9,8 @@ use socket2::{Domain, Protocol, Socket, Type};
 use crate::games::PortGroup;
 use crate::platform::{boost_thread_priority, set_high_priority, HighResTimer};
 use crate::stats::RelayStats;
+
+type GameActiveCb = Arc<dyn Fn(&str, bool) + Send + Sync>;
 
 /// Receive forwarded telemetry and relay to SimHub on this PC.
 #[derive(Parser)]
@@ -32,6 +34,10 @@ pub struct Args {
     /// Spin on recv instead of sleeping (lower latency, higher CPU)
     #[arg(long)]
     pub busy_wait: bool,
+    /// Callback fired when a game's active state changes (game_id, is_active).
+    /// Not a CLI argument — set programmatically when running as a library.
+    #[arg(skip)]
+    pub on_game_active: Option<GameActiveCb>,
 }
 
 struct GameReceiver {
@@ -130,6 +136,9 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
                                 "[{}] traffic received \u{2192} {}",
                                 recv.group.display_name, recv.forward_addr
                             );
+                            if let Some(cb) = &args.on_game_active {
+                                cb(&recv.group.id, true);
+                            }
                         }
                         recv.last_packet = Some(Instant::now());
                     }
@@ -148,6 +157,9 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
             {
                 recv.active = false;
                 println!("[{}] no data for 10 s", recv.group.display_name);
+                if let Some(cb) = &args.on_game_active {
+                    cb(&recv.group.id, false);
+                }
             }
         }
 

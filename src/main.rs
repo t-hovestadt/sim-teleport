@@ -135,6 +135,7 @@ fn main() -> io::Result<()> {
                     forward_to,
                     high_priority,
                     busy_wait,
+                    on_game_active: None,
                 },
                 rx,
             )
