@@ -14,6 +14,11 @@ executables, no installers, no dependencies.
 └─────────────────────────┘                                           └─────────────────────────┘
 ```
 
+**Companion projects:**
+- [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) — iRacing (shared memory)
+- [sim-relay](https://github.com/t-hovestadt/sim-relay) — games that broadcast UDP natively
+- [sim-bridge](https://github.com/t-hovestadt/sim-bridge) — unified single-binary launcher for all three
+
 ---
 
 ## Download
