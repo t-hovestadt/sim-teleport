@@ -231,9 +231,9 @@ pub static GAMES: &[GameDef] = &[
         default_port: 23123,
         process_names: &[
             "Wreckfest2.exe",
-            "Wreckfest2_BE.exe",              // BattlEye anti-cheat launcher
-            "Wreckfest2_EAC.exe",             // EasyAntiCheat launcher
-            "Wreckfest2-Win64-Shipping.exe",  // Unreal Engine shipping binary
+            "Wreckfest2_BE.exe",             // BattlEye anti-cheat launcher
+            "Wreckfest2_EAC.exe",            // EasyAntiCheat launcher
+            "Wreckfest2-Win64-Shipping.exe", // Unreal Engine shipping binary
         ],
         console: false,
         notes: "Settings > Gameplay > Telemetry > On, port 23123. \
