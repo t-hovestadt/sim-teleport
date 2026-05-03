@@ -160,12 +160,45 @@ Created automatically on first run, next to `sim-bridge.exe`. Re-run `sim-bridge
 | `apps.high_priority` | `false` | Set `HIGH_PRIORITY_CLASS` on telemetry threads |
 | `apps.busy_wait` | `false` | Spin instead of sleeping (lower latency, higher CPU) |
 | `apps.fanalab` | `false` | Write iRacing data to FanaLab shared memory (target only) |
-| `advanced.stale_timeout_secs` | `10` | Seconds before target marks received data as stale |
-| `advanced.reconnect_timeout_secs` | `5` | Seconds iRacing source waits before reset |
-| `advanced.ac_poll_rate` | `60` | AC Teleport source poll rate (Hz) |
-| `advanced.datagram_size` | `65000` | iRacing Teleport datagram size in bytes |
+| `advanced.stale_timeout_secs` | `10` | Target: seconds before marking received data as stale |
+| `advanced.reconnect_timeout_secs` | `10` | Source: iRacing reconnect timeout in seconds |
+| `advanced.ac_poll_rate` | `60` | Source: AC shared-memory poll rate (Hz) |
+| `advanced.datagram_size` | `9000` | Source: iRacing UDP datagram size in bytes (max 9000 for jumbo frames, 1472 for standard MTU) |
 
 **Recommended install location:** Place `sim-bridge.exe` and `sim-bridge.toml` in a user-writable directory like `C:\Simracing\`, not in Program Files. The log file (`sim-bridge.log`) and config file are written next to the exe.
+
+---
+
+## CLI reference
+
+```
+sim-bridge.exe [SUBCOMMAND]
+```
+
+If no subcommand is given, sim-bridge reads `mode` from `sim-bridge.toml` and
+auto-starts as source or target (double-click friendly).
+
+| Subcommand | Description |
+|------------|-------------|
+| `source` | Gaming PC: scan for running games, start the matching telemetry subsystem |
+| `target` | SimHub PC: start all three telemetry receivers simultaneously |
+| `setup` | Interactive wizard — writes `sim-bridge.toml` next to the exe |
+| `install [--mode source\|target]` | Register as a Windows logon task (run as Administrator) |
+| `uninstall` | Remove the logon task (run as Administrator) |
+| `list` | Print all supported games with their process names and ports |
+| `firewall` | Print PowerShell `New-NetFirewallRule` commands for all configured ports |
+
+**Examples:**
+
+```
+sim-bridge.exe source
+sim-bridge.exe target
+sim-bridge.exe setup
+sim-bridge.exe install --mode target
+sim-bridge.exe uninstall
+sim-bridge.exe list
+sim-bridge.exe firewall
+```
 
 ---
 
