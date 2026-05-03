@@ -72,14 +72,94 @@ sim-relay.exe target
 
 ## Supported Games
 
-| ID | Game | Port | Detection | Setup |
-|----|------|------|-----------|-------|
-| `pcars2` | Project Cars 2 / Automobilista 2 | 5606 | `AMS2AVX.exe`, `AMS2.exe`, `pCARS2AVX.exe`, `pCARS2.exe` | Enable **UDP Frequency > 0** in game settings |
-| `wreckfest2` | Wreckfest 2 | 23123 | `Wreckfest2.exe` | Telemetry sent automatically |
-| `beamng-outgauge` | BeamNG.drive (OutGauge) | 63392 | `BeamNG.drive.exe` | Options → Other → OutGauge → enable, IP `127.0.0.1`, port `63392` |
-| `beamng-sh` | BeamNG.drive (SimHub Mod) | 9999 | `BeamNG.drive.exe` | Requires the SimHub telemetry mod installed in BeamNG |
+`sim-relay list` prints the full table with per-game setup notes. Games sharing a UDP port are listened to on a single socket — one port, one socket, regardless of how many games use it.
 
-`sim-relay list` prints this table with setup notes.
+**Forza** (port 5300 — FM7, FH4, FH5 · port 9876 — FM 2023)
+
+| ID | Game | Port | Detection |
+|----|------|------|-----------|
+| `forza-fm7` | Forza Motorsport 7 | 5300 | `ForzaMotorsport7.exe` |
+| `forza-fh4` | Forza Horizon 4 | 5300 | `ForzaHorizon4.exe` |
+| `forza-fh5` | Forza Horizon 5 | 5300 | `ForzaHorizon5.exe` |
+| `forza-fm` | Forza Motorsport (2023) | 9876 | `ForzaMotorsport.exe` |
+
+Settings → HUD and Gameplay → Data Out → enable, **Dash format**.
+
+**Project CARS 2 API** (port 5606)
+
+| ID | Game | Detection |
+|----|------|-----------|
+| `pcars2` | Project Cars 2 | `pCARS2AVX.exe`, `pCARS2.exe` |
+| `ams2` | Automobilista 2 | `AMS2AVX.exe`, `AMS2.exe` |
+| `kartkraft` | KartKraft | `KartKraft.exe` |
+
+Enable **UDP Frequency > 0** in game settings.
+
+**BeamNG.drive** (ports 9999, 63392)
+
+| ID | Game | Port | Setup |
+|----|------|------|-------|
+| `beamng-sh` | BeamNG.drive (SimHub Mod) | 9999 | Requires the SimHub telemetry mod |
+| `beamng-outgauge` | BeamNG.drive (OutGauge) | 63392 | Options → Other → OutGauge → enable, port `63392` |
+
+**Codemasters / EA Sports** (port 20777 — all titles)
+
+| ID | Game |
+|----|------|
+| `f1-25` | F1 25 |
+| `f1-24` | F1 24 |
+| `f1-23` | F1 23 |
+| `f1-22` | F1 22 |
+| `f1-21` | F1 21 |
+| `f1-20` | F1 2020 |
+| `f1-19` | F1 2019 |
+| `f1-18` | F1 2018 |
+| `dirt-rally2` | DiRT Rally 2.0 |
+| `dirt4` | DiRT 4 |
+| `dirt5` | DiRT 5 |
+| `wrc-23` | WRC 2023 |
+| `wrc-24` | WRC 2024 |
+
+Game Options → Settings → **Telemetry Settings** → UDP On, port 20777. (F1 games) or Hardware Settings → UDP (DiRT / WRC).
+
+**Wreckfest 2** (port 23123) — `wreckfest2` — telemetry sent automatically.
+
+**Gran Turismo** (port 33740 — console, no process detection)
+
+| ID | Game |
+|----|------|
+| `gt7` | Gran Turismo 7 |
+| `gt-sport` | Gran Turismo Sport |
+
+Settings → enable UDP telemetry, port 33740.
+
+**Truck / Farm Sims** (port 25555)
+
+| ID | Game | Detection |
+|----|------|-----------|
+| `ets2` | Euro Truck Simulator 2 | `eurotrucks2.exe` |
+| `ats` | American Truck Simulator | `amtrucks.exe` |
+| `fs22` | Farming Simulator 22 | `FarmingSimulator2022Game.exe` |
+| `fs25` | Farming Simulator 25 | `FarmingSimulator2025.exe` |
+
+ETS2/ATS: install the [SCS Telemetry plugin](https://github.com/RenCloud/scs-sdk-plugin). FS22/FS25: install the SimHub telemetry mod.
+
+**Piboso / Live for Speed** (port 30000)
+
+| ID | Game | Detection |
+|----|------|-----------|
+| `gpbikes` | GP Bikes | `GPBikes.exe` |
+| `mxbikes` | MX Bikes | `MXBikes.exe` |
+| `krp` | Kart Racing Pro | `KartRacingPro.exe` |
+| `lfs` | Live for Speed | `LFS.exe` |
+
+Piboso titles send automatically. LFS: Options → Output → OutSim → enable, port 30000.
+
+**DCS World** (port 34380) — `dcs` — requires a DCS export script.
+
+**X-Plane 11/12** (port 49003) — `xplane` — Settings → Data Output → Network via UDP, port 49003.
+
+**NoLimits 2** (port 15151) — `nolimits2` — telemetry sent automatically.
 
 ### Not Supported
 
@@ -195,10 +275,11 @@ Add an inbound UDP rule for the game ports on the **SimHub PC**:
 
 ```powershell
 # Run as Administrator
-New-NetFirewallRule -DisplayName "Sim Relay" -Direction Inbound -Protocol UDP -LocalPort 5606,9999,23123,63392 -Action Allow
+New-NetFirewallRule -DisplayName "Sim Relay" -Direction Inbound -Protocol UDP `
+    -LocalPort 5300,5606,9876,9999,15151,20777,23123,25555,30000,33740,34380,49003,63392 -Action Allow
 ```
 
-Or via *Windows Defender Firewall → Advanced Settings → Inbound Rules → New Rule → Port → UDP → 5606,9999,23123,63392 → Allow*.
+Or via *Windows Defender Firewall → Advanced Settings → Inbound Rules → New Rule → Port → UDP → enter the ports above → Allow*.
 
 **3. NIC settings (both PCs)**
 

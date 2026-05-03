@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use socket2::{Domain, Protocol, Socket, Type};
 
-use crate::games::{Detection, GameDef};
+use crate::games::PortGroup;
 use crate::platform::{boost_thread_priority, is_process_running, set_high_priority, HighResTimer};
 use crate::stats::RelayStats;
 
@@ -38,7 +38,7 @@ pub struct Args {
 }
 
 struct GameRelay {
-    def: &'static GameDef,
+    group: PortGroup,
     socket: Option<UdpSocket>,
     target_addr: SocketAddr,
     local_addr: Option<SocketAddr>,
@@ -81,10 +81,9 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
     let target_ip = args.target.as_str();
 
     let mut relays: Vec<GameRelay> = Vec::new();
-    for def in selected {
-        let target_addr: SocketAddr = format!("{target_ip}:{}", def.default_port)
-            .parse()
-            .map_err(|e| {
+    for group in selected {
+        let target_addr: SocketAddr =
+            format!("{target_ip}:{}", group.port).parse().map_err(|e| {
                 io::Error::new(
                     ErrorKind::InvalidInput,
                     format!("invalid target '{}': {e}", args.target),
@@ -92,7 +91,7 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
             })?;
 
         let local_addr = if args.local_forward {
-            let local_port = def.default_port.saturating_add(1000);
+            let local_port = group.port.saturating_add(1000);
             Some(
                 format!("127.0.0.1:{local_port}")
                     .parse::<SocketAddr>()
@@ -106,24 +105,24 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
             // Start unbound; will bind when the game process is detected.
             (None, false)
         } else {
-            let s = bind_socket(def.default_port, &args.bind).map_err(|e| {
+            let s = bind_socket(group.port, &args.bind).map_err(|e| {
                 io::Error::new(
                     e.kind(),
                     format!(
                         "[{}] failed to bind port {}: {e}",
-                        def.name, def.default_port
+                        group.display_name, group.port
                     ),
                 )
             })?;
             println!(
                 "[{}] listening on {}:{} → {target_addr}",
-                def.name, args.bind, def.default_port
+                group.display_name, args.bind, group.port
             );
             (Some(s), true)
         };
 
         relays.push(GameRelay {
-            def,
+            group,
             socket,
             target_addr,
             local_addr,
@@ -154,23 +153,24 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
 
         for relay in &mut relays {
             if args.auto_detect && relay.last_process_check.elapsed() >= Duration::from_secs(5) {
-                let running = match &relay.def.detection {
-                    Detection::Process(names) => is_process_running(names),
-                    Detection::UdpActivity => relay.socket.is_some(),
+                let running = if relay.group.process_names.is_empty() {
+                    true // console game or no process detection; always bind
+                } else {
+                    is_process_running(&relay.group.process_names)
                 };
                 if running && relay.socket.is_none() {
-                    match bind_socket(relay.def.default_port, &args.bind) {
+                    match bind_socket(relay.group.port, &args.bind) {
                         Ok(s) => {
                             println!(
                                 "[{}] process detected — bound port {}",
-                                relay.def.name, relay.def.default_port
+                                relay.group.display_name, relay.group.port
                             );
                             relay.socket = Some(s);
                         }
                         Err(e) => {
                             eprintln!(
                                 "[{}] failed to bind port {}: {e}",
-                                relay.def.name, relay.def.default_port
+                                relay.group.display_name, relay.group.port
                             );
                         }
                     }
@@ -179,7 +179,7 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
                     relay.active = false;
                     println!(
                         "[{}] process gone — unbound port {}",
-                        relay.def.name, relay.def.default_port
+                        relay.group.display_name, relay.group.port
                     );
                 }
                 relay.process_running = running;
@@ -204,14 +204,14 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
                             relay.active = true;
                             println!(
                                 "[{}] data flowing \u{2192} {}",
-                                relay.def.name, relay.target_addr
+                                relay.group.display_name, relay.target_addr
                             );
                         }
                         relay.last_packet = Some(Instant::now());
                     }
                     Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                     Err(e) => {
-                        eprintln!("[{}] recv error: {e}", relay.def.id);
+                        eprintln!("[{}] recv error: {e}", relay.group.id);
                         break;
                     }
                 }
@@ -225,14 +225,16 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
                 relay.active = false;
                 println!(
                     "[{}] no data for 10 s — game likely paused or closed",
-                    relay.def.name
+                    relay.group.display_name
                 );
             }
         }
 
         if last_stats.elapsed() >= Duration::from_secs(5) {
             for relay in &mut relays {
-                relay.stats.maybe_print(relay.def.name, relay.active);
+                relay
+                    .stats
+                    .maybe_print(&relay.group.display_name, relay.active);
             }
             last_stats = Instant::now();
         }
@@ -243,7 +245,9 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
     let elapsed = start.elapsed();
     println!("\n--- Summary ---");
     for relay in &relays {
-        relay.stats.print_summary(relay.def.name, elapsed);
+        relay
+            .stats
+            .print_summary(&relay.group.display_name, elapsed);
     }
     Ok(())
 }

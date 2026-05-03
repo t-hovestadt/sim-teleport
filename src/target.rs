@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use socket2::{Domain, Protocol, Socket, Type};
 
-use crate::games::GameDef;
+use crate::games::PortGroup;
 use crate::platform::{boost_thread_priority, set_high_priority, HighResTimer};
 use crate::stats::RelayStats;
 
@@ -35,7 +35,7 @@ pub struct Args {
 }
 
 struct GameReceiver {
-    def: &'static GameDef,
+    group: PortGroup,
     recv_socket: UdpSocket,
     fwd_socket: UdpSocket,
     forward_addr: SocketAddr,
@@ -68,11 +68,11 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
     };
 
     let mut receivers: Vec<GameReceiver> = Vec::new();
-    for def in selected {
+    for group in selected {
         let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         sock.set_reuse_address(true)?;
         sock.set_recv_buffer_size(512 * 1024)?;
-        let bind_addr: SocketAddr = format!("0.0.0.0:{}", def.default_port).parse().unwrap();
+        let bind_addr: SocketAddr = format!("0.0.0.0:{}", group.port).parse().unwrap();
         sock.bind(&bind_addr.into())?;
         let recv_socket: UdpSocket = sock.into();
         recv_socket.set_nonblocking(true)?;
@@ -82,15 +82,15 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
         let fwd_socket = UdpSocket::bind("0.0.0.0:0")?;
 
         let forward_addr = forward_override
-            .unwrap_or_else(|| format!("127.0.0.1:{}", def.default_port).parse().unwrap());
+            .unwrap_or_else(|| format!("127.0.0.1:{}", group.port).parse().unwrap());
 
         println!(
             "[{}] listening on 0.0.0.0:{} → {forward_addr}",
-            def.name, def.default_port
+            group.display_name, group.port
         );
 
         receivers.push(GameReceiver {
-            def,
+            group,
             recv_socket,
             fwd_socket,
             forward_addr,
@@ -127,14 +127,14 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
                             recv.active = true;
                             println!(
                                 "[{}] traffic received \u{2192} {}",
-                                recv.def.name, recv.forward_addr
+                                recv.group.display_name, recv.forward_addr
                             );
                         }
                         recv.last_packet = Some(Instant::now());
                     }
                     Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                     Err(e) => {
-                        eprintln!("[{}] recv error: {e}", recv.def.id);
+                        eprintln!("[{}] recv error: {e}", recv.group.id);
                         break;
                     }
                 }
@@ -146,13 +146,14 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
                     .is_none_or(|t| t.elapsed() > Duration::from_secs(10))
             {
                 recv.active = false;
-                println!("[{}] no data for 10 s", recv.def.name);
+                println!("[{}] no data for 10 s", recv.group.display_name);
             }
         }
 
         if last_stats.elapsed() >= Duration::from_secs(5) {
             for recv in &mut receivers {
-                recv.stats.maybe_print(recv.def.name, recv.active);
+                recv.stats
+                    .maybe_print(&recv.group.display_name, recv.active);
             }
             last_stats = Instant::now();
         }
@@ -167,7 +168,7 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
     let elapsed = start.elapsed();
     println!("\n--- Summary ---");
     for recv in &receivers {
-        recv.stats.print_summary(recv.def.name, elapsed);
+        recv.stats.print_summary(&recv.group.display_name, elapsed);
     }
     Ok(())
 }
