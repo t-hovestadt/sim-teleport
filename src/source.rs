@@ -566,12 +566,15 @@ fn game_label(game: Option<ShmemGame>) -> &'static str {
 }
 
 /// Returns false when the game process is no longer running.
-/// Called every scan cycle while Running to catch managed-mode AC threads that
-/// don't self-exit. iRacing and sim-relay are excluded — their threads handle
-/// their own exit via WaitForSingleObject / internal process polling.
-fn is_game_still_running(game: ShmemGame, scanner: &mut ProcessScanner) -> bool {
+/// Called every scan cycle while Running to detect game closure across all game types.
+/// iRacing uses the SDK event probe (instant, no process scan). AC and sim-relay use
+/// process names.
+fn is_game_still_running(game: ShmemGame, scanner: &mut ProcessScanner, log: &Logger) -> bool {
     match game {
-        ShmemGame::Iracing => true,
+        ShmemGame::Iracing => {
+            // SDK event is destroyed by the OS when iRacing exits — instant, no process scan.
+            probe_iracing_event(false, log)
+        }
         ShmemGame::AcEvo => {
             scanner.refresh();
             scanner.is_running(&["assettocorsa_evo.exe", "assettocorsaevo.exe"])
@@ -584,7 +587,14 @@ fn is_game_still_running(game: ShmemGame, scanner: &mut ProcessScanner) -> bool 
             scanner.refresh();
             scanner.is_running(&["acc.exe"])
         }
-        ShmemGame::SimRelay { .. } => true,
+        ShmemGame::SimRelay { id, .. } => {
+            scanner.refresh();
+            if let Some(def) = sim_relay::games::GAMES.iter().find(|g| g.id == id) {
+                scanner.is_running(def.process_names)
+            } else {
+                true
+            }
+        }
     }
 }
 
@@ -738,7 +748,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                 shmem.failures.record(log, name);
                 shmem.begin_drain();
             } else if let Some(game) = shmem.current_game() {
-                if !is_game_still_running(game, &mut scanner) {
+                if !is_game_still_running(game, &mut scanner, log) {
                     let name = game_label(Some(game));
                     log.log(&format!("[{name}] Game process gone — stopping"));
                     report.push_note(format!(
@@ -747,6 +757,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                         name
                     ));
                     shmem.send_shutdown();
+                    std::thread::sleep(Duration::from_millis(500));
                     shmem.begin_drain();
                 }
             }
