@@ -1,1 +1,4 @@
 /target/
+*.exe
+*.log
+.DS_Store
