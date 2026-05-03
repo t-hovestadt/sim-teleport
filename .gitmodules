@@ -1,0 +1,9 @@
+[submodule "deps/iracing-teleport"]
+	path = deps/iracing-teleport
+	url = https://github.com/t-hovestadt/iracing-teleport.git
+[submodule "deps/ac-teleport"]
+	path = deps/ac-teleport
+	url = https://github.com/t-hovestadt/ac-teleport.git
+[submodule "deps/sim-relay"]
+	path = deps/sim-relay
+	url = https://github.com/t-hovestadt/sim-relay.git
