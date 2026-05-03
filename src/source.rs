@@ -108,7 +108,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
         let tick = Duration::from_micros(1_000_000 / args.poll_rate.max(1) as u64);
         let mut next_tick = Instant::now();
 
-        let ActiveMaps { game, maps } = active;
+        let ActiveMaps { game, mut maps } = active;
         let mut session_active = false;
 
         loop {
@@ -216,9 +216,19 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
             // so packetId being 0 just means the game is on the menu, not that it's gone.
             if args.game.is_none() && last_nonzero_tick.elapsed() >= RECONNECT_INTERVAL {
                 drop(maps);
-                println!("{} disconnected. Waiting for game...", game.name);
-                stats.print_summary();
-                continue 'outer;
+                match try_open_maps(game) {
+                    Ok(new_maps) => {
+                        // Maps still exist — game is on menu, not gone. Stay connected.
+                        maps = new_maps;
+                        last_nonzero_tick = Instant::now();
+                    }
+                    Err(_) => {
+                        // Maps gone — game truly closed.
+                        println!("{} disconnected. Waiting for game...", game.name);
+                        stats.print_summary();
+                        continue 'outer;
+                    }
+                }
             }
 
             stats.maybe_print();
