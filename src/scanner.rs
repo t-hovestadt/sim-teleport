@@ -76,13 +76,16 @@ impl ProcessScanner {
     }
 }
 
-// ── iRacing event probe ───────────────────────────────────────────────────────
+// ── iRacing event probe (fast-negative only) ─────────────────────────────────
 
-/// Check if iRacing is running by probing its data-valid named event.
-/// The event only exists while iRacing is running — no stale state possible.
-/// One syscall, ~1 µs, definitive answer.
+/// Fast check: if the event doesn't exist, iRacing is definitely not running.
+/// BUT: if the event DOES exist, iRacing may still not be running — our own
+/// teleport thread, FanaLab, and other telemetry apps hold event handles after
+/// iRacing exits, keeping the event alive (ghost handle deadlock).
+/// NEVER use this as the sole detection method. Use process name scanning instead.
+#[allow(dead_code)]
 #[cfg(windows)]
-pub fn probe_iracing_event(verbose: bool, log: &Logger) -> bool {
+pub fn iracing_event_exists() -> bool {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::OpenEventW;
 
@@ -91,7 +94,7 @@ pub fn probe_iracing_event(verbose: bool, log: &Logger) -> bool {
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
-    let found = unsafe {
+    unsafe {
         let handle = OpenEventW(SYNCHRONIZE, 0, name.as_ptr());
         if handle == 0 {
             false
@@ -99,22 +102,12 @@ pub fn probe_iracing_event(verbose: bool, log: &Logger) -> bool {
             CloseHandle(handle);
             true
         }
-    };
-    if verbose {
-        log.log(if found {
-            "[scan] iRacing event: FOUND"
-        } else {
-            "[scan] iRacing event: not found"
-        });
     }
-    found
 }
 
+#[allow(dead_code)]
 #[cfg(not(windows))]
-pub fn probe_iracing_event(verbose: bool, log: &Logger) -> bool {
-    if verbose {
-        log.log("[scan] iRacing event: not found");
-    }
+pub fn iracing_event_exists() -> bool {
     false
 }
 

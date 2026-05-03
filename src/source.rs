@@ -5,9 +5,7 @@ use std::time::{Duration, Instant};
 use crate::config::Config;
 use crate::logger::Logger;
 use crate::report::SessionReport;
-use crate::scanner::{
-    probe_ac_maps, probe_iracing_event, AcProbeResult, ProcessScanner, ShmemDetection,
-};
+use crate::scanner::{probe_ac_maps, AcProbeResult, ProcessScanner, ShmemDetection};
 
 // ── Scan context (passed to detection functions) ──────────────────────────────
 
@@ -39,13 +37,13 @@ struct Detection {
 
 /// Determine the desired game from pre-computed probe results.
 ///
-/// `iracing_detected`: result of `probe_iracing_event()`.
+/// `iracing_detected`: true when `iracingsim64dx11.exe` is in the process snapshot.
 /// `ac`: result of `probe_ac_maps()` — both fields are `None` when the probe was skipped.
 /// `running_ac`: the game currently in `SlotState::Running`, if it is an AC variant.
 ///   When the AC probe was skipped because we were already running an AC game, this is
 ///   the game to re-return so the slot stays active without an unnecessary re-probe.
-/// `scanner`: process snapshot — only consulted for AC stale tiebreaker and sim-relay;
-///   may be stale when `need_process_scan` was false and `scanner.refresh()` was skipped.
+/// `scanner`: process snapshot — consulted for iRacing, AC stale tiebreaker, and sim-relay;
+///   always fresh (refreshed unconditionally at the top of `run_detection_cycle`).
 fn detect_shmem_game(
     iracing_detected: bool,
     ac: &AcProbeResult,
@@ -60,7 +58,7 @@ fn detect_shmem_game(
         return Some(Detection {
             game: ShmemGame::Iracing,
             label: "iRacing",
-            how: "SDK event",
+            how: "process scan",
         });
     }
     if cfg.apps.ac_teleport_enabled {
@@ -567,13 +565,11 @@ fn game_label(game: Option<ShmemGame>) -> &'static str {
 
 /// Returns false when the game process is no longer running.
 /// Called every scan cycle while Running to detect game closure across all game types.
-/// iRacing uses the SDK event probe (instant, no process scan). AC and sim-relay use
-/// process names.
-fn is_game_still_running(game: ShmemGame, scanner: &mut ProcessScanner, log: &Logger) -> bool {
+fn is_game_still_running(game: ShmemGame, scanner: &mut ProcessScanner, _log: &Logger) -> bool {
     match game {
         ShmemGame::Iracing => {
-            // SDK event is destroyed by the OS when iRacing exits — instant, no process scan.
-            probe_iracing_event(false, log)
+            scanner.refresh();
+            scanner.is_running(&["iracingsim64dx11.exe"])
         }
         ShmemGame::AcEvo => {
             scanner.refresh();
@@ -592,14 +588,14 @@ fn is_game_still_running(game: ShmemGame, scanner: &mut ProcessScanner, log: &Lo
             if let Some(def) = sim_relay::games::GAMES.iter().find(|g| g.id == id) {
                 scanner.is_running(def.process_names)
             } else {
-                true
+                false
             }
         }
     }
 }
 
-/// Run a full detection cycle: iRacing event probe, AC shmem probe (when needed),
-/// process scan (when needed for tiebreaker or sim-relay), then classify.
+/// Run a full detection cycle: process scan, iRacing check, AC shmem probe
+/// (when needed), then classify.
 /// Called only when the slot is Idle or Draining — never while Running.
 fn run_detection_cycle(
     config: &Config,
@@ -615,17 +611,30 @@ fn run_detection_cycle(
     };
     ctx.report.total_scans += 1;
 
+    // Always refresh the process snapshot. Used for iRacing detection, AC
+    // stale tiebreakers, and sim-relay scanning. ~1 ms on Windows.
+    scanner.refresh();
+    ctx.report.process_scans += 1;
+
     let iracing_detected = if config.apps.iracing_teleport_enabled {
         ctx.report.iracing_probes += 1;
-        let found = probe_iracing_event(verbose, log);
+        let found = scanner.is_running(&["iracingsim64dx11.exe"]);
         if found {
             ctx.report.iracing_hits += 1;
+        }
+        if verbose {
+            log.log(if found {
+                "[scan] iRacing process: FOUND"
+            } else {
+                "[scan] iRacing process: not found"
+            });
         }
         found
     } else {
         false
     };
 
+    // AC shmem probe: skip if iRacing already detected (saves ~200ms sleep).
     let ac_probe = if config.apps.ac_teleport_enabled && !iracing_detected {
         let result = probe_ac_maps(verbose, log);
         if result.ac_evo.is_some() {
@@ -651,21 +660,6 @@ fn run_detection_cycle(
             ac1: None,
         }
     };
-
-    let need_process_scan = config.apps.ac_teleport_enabled
-        && (matches!(ac_probe.ac_evo, Some(ShmemDetection::Stale))
-            || matches!(
-                ac_probe.ac1,
-                Some(ShmemDetection::Live | ShmemDetection::Stale)
-            ))
-        || (config.apps.sim_relay_enabled
-            && !iracing_detected
-            && ac_probe.ac_evo.is_none()
-            && ac_probe.ac1.is_none());
-    if need_process_scan {
-        scanner.refresh();
-        ctx.report.process_scans += 1;
-    }
 
     // running_ac is None — this function is not called while Running.
     detect_shmem_game(iracing_detected, &ac_probe, None, scanner, config, &mut ctx)
