@@ -42,7 +42,7 @@ struct Args {
     #[arg(long)]
     high_priority: bool,
 
-    /// Drop shared memory maps after this many seconds without data.
+    /// Seconds without data before action: drop maps (single-game mode) or zero game status (dual mode).
     #[arg(long, default_value_t = 10)]
     stale_timeout: u64,
 }

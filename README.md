@@ -1,7 +1,7 @@
 # ac-teleport
 
 Stream **Assetto Corsa (AC1)** or **Assetto Corsa EVO** telemetry over your local network so
-SimHub (or any compatible app) runs on a separate machine from your game PC. Two small Windows
+SimHub (or any compatible app) runs on a separate machine from your game PC. Small Windows
 executables, no installers, no dependencies.
 
 ```
@@ -20,9 +20,11 @@ executables, no installers, no dependencies.
 
 Pre-built Windows x64 binaries are on the [Releases](../../releases/latest) page.
 
-| File | Machine |
-|------|---------|
-| `ac-teleport.exe` | Both — run with `source` or `target` subcommand |
+| File | Machine | Notes |
+|------|---------|-------|
+| `source.exe` | Game PC | Run directly: `source.exe` |
+| `target.exe` | SimHub PC | Run directly: `target.exe` |
+| `ac-teleport.exe` | Both | Combined CLI: `ac-teleport.exe source` / `ac-teleport.exe target` |
 
 ---
 

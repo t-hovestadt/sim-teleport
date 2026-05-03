@@ -2,21 +2,21 @@ use crate::maps::SharedMap;
 
 /// Per-game shared memory configuration.
 ///
-/// The `max_*_size` fields are upper bounds for pre-allocating LZ4 buffers.
-/// Actual region sizes are queried at runtime via VirtualQuery on the source side.
-/// The target creates maps at these sizes so all decompressed data fits.
+/// The `max_*_size` fields are upper bounds used to pre-allocate LZ4 compression
+/// buffers on the source side. Actual region sizes are queried at runtime via
+/// VirtualQuery. The target ignores these — it allocates maps at `DUAL_MAP_SIZE`
+/// (64 KB) to accommodate any game's data with room for future struct growth.
 pub struct GameConfig {
     pub id: &'static str,
     pub name: &'static str,
-    pub process_name: &'static str,
     pub physics_map: &'static str,
     pub graphics_map: &'static str,
     pub static_map: &'static str,
-    /// Upper bound for physics page buffer allocation.
+    /// Upper bound for source-side physics compression buffer allocation.
     pub max_physics_size: usize,
-    /// Upper bound for graphics page buffer allocation.
+    /// Upper bound for source-side graphics compression buffer allocation.
     pub max_graphics_size: usize,
-    /// Upper bound for static page buffer allocation.
+    /// Upper bound for source-side static compression buffer allocation.
     pub max_static_size: usize,
 }
 
@@ -29,7 +29,6 @@ pub struct GameConfig {
 pub const AC1: GameConfig = GameConfig {
     id: "ac1",
     name: "Assetto Corsa",
-    process_name: "acs.exe",
     physics_map: "Local\\acpmf_physics",
     graphics_map: "Local\\acpmf_graphics",
     static_map: "Local\\acpmf_static",
@@ -45,7 +44,6 @@ pub const AC1: GameConfig = GameConfig {
 pub const EVO: GameConfig = GameConfig {
     id: "evo",
     name: "Assetto Corsa EVO",
-    process_name: "AssettoCorsaEVO.exe",
     physics_map: "Local\\acevo_pmf_physics",
     graphics_map: "Local\\acevo_pmf_graphics",
     static_map: "Local\\acevo_pmf_static",
