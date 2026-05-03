@@ -8,6 +8,7 @@ type RelayGameCb = Arc<dyn Fn(&str, bool) + Send + Sync>;
 
 use crate::config::Config;
 use crate::logger::Logger;
+use crate::simhub_setup;
 
 // ── SimHub auto-switching ─────────────────────────────────────────────────────
 
@@ -280,9 +281,39 @@ fn spawn_relay_target(
         .expect("failed to spawn Sim Relay target thread")
 }
 
+/// Built-in SimHub game codes for sim-relay games, used when [simhub.relay] has no entry.
+/// Config takes priority: if simhub.relay.<id> is set, that overrides this table.
+fn builtin_relay_simhub_code(id: &str) -> Option<&'static str> {
+    match id {
+        "wreckfest2" => Some("Wreckfest2"),
+        "f1-25" => Some("F12025"),
+        "f1-24" => Some("F12024"),
+        "f1-23" => Some("F12023"),
+        "f1-22" => Some("F12022"),
+        "f1-21" => Some("F12021"),
+        "f1-20" => Some("F12020"),
+        "dirt-rally2" => Some("DirtRally2"),
+        "dirt5" => Some("Dirt5"),
+        "wrc-24" => Some("WRC2024"),
+        "wrc-23" => Some("WRC2023"),
+        "beamng-sh" | "beamng-outgauge" => Some("BeamNGDrive"),
+        "pcars2" | "kartkraft" => Some("ProjectCars2"),
+        "ams2" => Some("AMS2"),
+        "forza-fm7" => Some("ForzaMotorsport7"),
+        "forza-fh4" => Some("ForzaHorizon4"),
+        "forza-fh5" => Some("ForzaHorizon5"),
+        "forza-fm" => Some("ForzaMotorsport"),
+        _ => None,
+    }
+}
+
 // ── Main target loop ──────────────────────────────────────────────────────────
 
 pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
+    // Auto-configure SimHub's PluginsData on the target PC so games like AC
+    // are marked as configured even though they're not installed here.
+    simhub_setup::setup_simhub_for_target(config.simhub.path.as_deref());
+
     // Issue #6: only start threads for enabled apps.
     // Issue #7: thread high_priority / busy_wait from config.
     let mut slots: Vec<TargetSlot> = Vec::new();
@@ -311,7 +342,12 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let simhub_path_relay = simhub_path.clone();
     let relay_on_game: RelayGameCb = Arc::new(move |id: &str, active: bool| {
         if active {
-            if let Some(code) = relay_codes.get(id) {
+            // Config overrides built-in table; built-in table is the fallback.
+            let code = relay_codes
+                .get(id)
+                .map(|s| s.as_str())
+                .or_else(|| builtin_relay_simhub_code(id));
+            if let Some(code) = code {
                 t5.try_activate(code, simhub_path_relay.as_deref());
             }
         } else {

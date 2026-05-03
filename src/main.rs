@@ -3,6 +3,7 @@ mod install;
 mod logger;
 mod report;
 mod scanner;
+mod simhub_setup;
 mod source;
 mod target;
 

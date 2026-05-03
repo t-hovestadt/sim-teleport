@@ -398,12 +398,13 @@ default path), sim-bridge runs `SimHubWPF.exe -switchgame <code>` once when tele
 new game is first received on the target PC. Resets automatically when the stale timeout fires
 so the next session re-triggers the switch.
 
-To enable auto-switching for a sim-relay game, add its code to `[simhub.relay]`:
+Most sim-relay games have built-in SimHub code mappings (Wreckfest 2, F1 2018–25, DiRT Rally 2.0,
+BeamNG, WRC, Project CARS 2, AMS2, Forza) — no config needed for those. Use `[simhub.relay]`
+only to override a built-in code or to add support for a game not in the built-in list:
 
 ```toml
 [simhub.relay]
-wreckfest2 = "Wreckfest2"
-f1-25      = "F12025"
+my-custom-game = "SimHubGameCode"
 ```
 
 SimHub game codes are the internal names SimHub uses for each title. If unsure, check SimHub's
@@ -419,16 +420,25 @@ apply and CLI flags alone control all behaviour.
 
 ### Assetto Corsa / ACE / ACC
 
-SimHub requires the AC plugin to be **enabled manually** on the target PC, even if AC is not
-installed there.
+On the **first run** of `sim-bridge target`, it writes `GameSettings.json` entries so SimHub
+skips the "game not configured" prompt for AC, ACE, ACC, iRacing, and Wreckfest 2. It also
+creates the per-game PluginsData subfolder. If changes were made, the log prints:
+
+```
+[SimHub] Configured AssettoCorsa in GameSettings.json
+[SimHub] *** Configuration updated. Please restart SimHub to apply changes. ***
+```
+
+Restart SimHub after this message. Subsequent runs are silent (idempotent).
+
+If SimHub still shows no AC telemetry after restarting:
 
 1. Open SimHub on the target PC.
 2. Go to **Settings** → **In-game apps** tab.
-3. Find **Assetto Corsa** in the list and enable it.
+3. Find **Assetto Corsa** in the list — enable it if not already enabled.
 4. Restart SimHub.
 
-SimHub will then open the `acpmf_physics`, `acpmf_graphics`, and `acpmf_static` shared memory
-maps created by sim-bridge. The target log prints a reminder when the first frame arrives.
+The target log also prints a reminder when the first AC frame arrives.
 
 ### Wreckfest 2 and other sim-relay games
 
@@ -443,18 +453,17 @@ If SimHub still shows nothing:
 
 - SimHub 2025 and later include Wreckfest 2 support. Earlier versions may not recognise the
   packet format — update SimHub if needed.
-- SimHub auto-switching requires the game code to be configured in `[simhub.relay]` (see
-  Config fields above). Without it, sim-bridge won't call `-switchgame`, so SimHub may stay
-  on the wrong game overlay.
+- sim-bridge has a built-in Wreckfest 2 → "Wreckfest2" code; no `[simhub.relay]` config needed.
 
 ### General checklist
 
 | Symptom | Likely cause |
 |---------|-------------|
 | Target log shows 0 msg/s | Data not reaching target — check source log and network |
-| Target log shows msg/s but SimHub blank | Plugin not enabled (AC) or SimHub not updated (Wreckfest 2) |
-| `[simhub] switched to ...` missing | `[simhub]` config not set, or `SimHubWPF.exe` not found |
-| SimHub shows wrong game overlay | Add game to `[simhub.relay]` so sim-bridge calls `-switchgame` |
+| Target log shows msg/s but SimHub blank | Restart SimHub after first run (auto-config applied) |
+| `[simhub] switched to ...` missing | `simhub.path` points to wrong location, or SimHubWPF.exe not found |
+| SimHub shows wrong game overlay | Game not in built-in code table; add to `[simhub.relay]` |
+| `[SimHub] Configuration updated` on every run | SimHub restoring defaults; check SimHub version |
 
 ---
 
