@@ -8,9 +8,11 @@
 mod imp {
     use std::collections::HashSet;
 
+    use windows_sys::Win32::Foundation::HANDLE;
     use windows_sys::Win32::Media::{timeBeginPeriod, timeEndPeriod};
     use windows_sys::Win32::System::Threading::{
-        GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetThreadPriority,
+        AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW, GetCurrentProcess,
+        GetCurrentThread, SetPriorityClass, SetThreadAffinityMask, SetThreadPriority,
         HIGH_PRIORITY_CLASS, THREAD_PRIORITY_ABOVE_NORMAL,
     };
 
@@ -50,6 +52,47 @@ mod imp {
             eprintln!("set_high_priority: SetPriorityClass failed");
         } else {
             println!("Process priority set to HIGH_PRIORITY_CLASS.");
+        }
+    }
+
+    /// RAII guard that registers the calling thread with MMCSS under the "Games"
+    /// task for reserved CPU time and dynamic priority boosts. Use on the target
+    /// PC to reduce UDP recv scheduling jitter.
+    pub struct MmcssGuard(HANDLE);
+
+    impl MmcssGuard {
+        pub fn acquire() -> Option<Self> {
+            let task: Vec<u16> = "Games\0".encode_utf16().collect();
+            let mut task_index = 0u32;
+            let handle = unsafe { AvSetMmThreadCharacteristicsW(task.as_ptr(), &mut task_index) };
+            if handle == 0 {
+                eprintln!("MMCSS registration failed (continuing without it)");
+                None
+            } else {
+                Some(Self(handle))
+            }
+        }
+    }
+
+    impl Drop for MmcssGuard {
+        fn drop(&mut self) {
+            unsafe { AvRevertMmThreadCharacteristics(self.0) };
+        }
+    }
+
+    /// Pin the calling thread to a specific CPU core. Reduces cross-core migration
+    /// jitter. `core` is a 0-based index; cores past 63 are ignored.
+    pub fn pin_thread_to_core(core: usize) {
+        if core >= 64 {
+            eprintln!("pin_thread_to_core: core {core} out of range (max 63), ignoring");
+            return;
+        }
+        let mask: usize = 1usize << core;
+        let prev = unsafe { SetThreadAffinityMask(GetCurrentThread(), mask) };
+        if prev == 0 {
+            eprintln!("pin_thread_to_core: SetThreadAffinityMask failed for core {core}");
+        } else {
+            println!("Pinned thread to CPU core {core}.");
         }
     }
 
@@ -127,6 +170,15 @@ mod imp {
     pub fn boost_thread_priority() {}
     pub fn set_high_priority() {}
 
+    pub struct MmcssGuard;
+    impl MmcssGuard {
+        pub fn acquire() -> Option<Self> {
+            Some(Self)
+        }
+    }
+
+    pub fn pin_thread_to_core(_core: usize) {}
+
     pub struct ProcessScanner {
         _running: HashSet<String>,
     }
@@ -148,4 +200,7 @@ mod imp {
     }
 }
 
-pub use imp::{boost_thread_priority, set_high_priority, HighResTimer, ProcessScanner};
+pub use imp::{
+    boost_thread_priority, pin_thread_to_core, set_high_priority, HighResTimer, MmcssGuard,
+    ProcessScanner,
+};
