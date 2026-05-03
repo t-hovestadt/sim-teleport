@@ -541,6 +541,12 @@ impl AppSlot {
         }
     }
 
+    fn send_shutdown(&mut self) {
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+    }
+
     fn state_label(&self) -> &'static str {
         match &self.state {
             SlotState::Idle => "idle",
@@ -556,6 +562,29 @@ fn game_label(game: Option<ShmemGame>) -> &'static str {
         Some(ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc) => "AC Teleport",
         Some(ShmemGame::SimRelay { name, .. }) => name,
         None => "app",
+    }
+}
+
+/// Returns false when the game process is no longer running.
+/// Called every scan cycle while Running to catch managed-mode AC threads that
+/// don't self-exit. iRacing and sim-relay are excluded — their threads handle
+/// their own exit via WaitForSingleObject / internal process polling.
+fn is_game_still_running(game: ShmemGame, scanner: &mut ProcessScanner) -> bool {
+    match game {
+        ShmemGame::Iracing => true,
+        ShmemGame::AcEvo => {
+            scanner.refresh();
+            scanner.is_running(&["assettocorsa_evo.exe", "assettocorsaevo.exe"])
+        }
+        ShmemGame::Ac1 => {
+            scanner.refresh();
+            scanner.is_running(&["acs.exe"])
+        }
+        ShmemGame::Acc => {
+            scanner.refresh();
+            scanner.is_running(&["acc.exe"])
+        }
+        ShmemGame::SimRelay { .. } => true,
     }
 }
 
@@ -628,8 +657,6 @@ fn run_detection_cycle(
         ctx.report.process_scans += 1;
     }
 
-    ctx.report.total_scans += 1;
-
     // running_ac is None — this function is not called while Running.
     detect_shmem_game(iracing_detected, &ac_probe, None, scanner, config, &mut ctx)
 }
@@ -701,8 +728,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
         }
 
         if matches!(shmem.state, SlotState::Running { .. }) {
-            // Game is active — no probing, no scanning.
-            // The subsystem thread manages its own connection; we just watch for exit.
+            // Game is active — watch for thread exit and game process liveness.
             if shmem.is_running_finished() {
                 let name = game_label(shmem.current_game());
                 log.log(&format!(
@@ -711,6 +737,18 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                 ));
                 shmem.failures.record(log, name);
                 shmem.begin_drain();
+            } else if let Some(game) = shmem.current_game() {
+                if !is_game_still_running(game, &mut scanner) {
+                    let name = game_label(Some(game));
+                    log.log(&format!("[{name}] Game process gone — stopping"));
+                    report.push_note(format!(
+                        "{} {} process gone",
+                        chrono::Local::now().format("%H:%M:%S"),
+                        name
+                    ));
+                    shmem.send_shutdown();
+                    shmem.begin_drain();
+                }
             }
         } else {
             // Idle or Draining — run full detection cycle.
