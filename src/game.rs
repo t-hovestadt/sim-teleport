@@ -1,3 +1,6 @@
+use std::thread;
+use std::time::Duration;
+
 use crate::maps::SharedMap;
 
 /// Per-game shared memory configuration.
@@ -65,9 +68,22 @@ pub fn resolve(id: &str) -> Option<&'static GameConfig> {
 }
 
 /// Probe shared memory to find the first running game in detection order (EVO → AC1).
-/// Test handles are opened and immediately dropped — no persistent handles are held.
-/// Returns `None` when neither game's maps are available.
+///
+/// Two-pass algorithm:
+///   Pass 1 — liveness check: prefer a game whose packetId is advancing (live session).
+///            This correctly handles stale EVO maps left over from a closed game.
+///   Pass 2 — existence fallback: if no game has live data (both on menu or loading),
+///            fall back to map-existence only. EVO retains priority in this case.
+///
+/// Returns `None` when neither game's maps are available at all.
 pub fn detect() -> Option<&'static GameConfig> {
+    // Pass 1: look for a game with an advancing packetId (active session).
+    for &game in DETECTION_ORDER {
+        if probe_live(game) {
+            return Some(game);
+        }
+    }
+    // Pass 2: neither game has live data — pick the first whose maps exist.
     DETECTION_ORDER.iter().copied().find(|&game| probe(game))
 }
 
@@ -80,6 +96,40 @@ fn probe(game: &GameConfig) -> bool {
     SharedMap::open(game.physics_map).is_ok()
         && SharedMap::open(game.graphics_map).is_ok()
         && SharedMap::open(game.static_map).is_ok()
+}
+
+/// Open the physics and graphics maps and check whether packetId advances over 200 ms.
+/// Returns `true` only if at least one packetId changed — i.e. the game is in an
+/// active session. Returns `false` for stale maps (game closed, packetId frozen) and
+/// for maps where the game is on the menu (packetId = 0 throughout).
+fn probe_live(game: &GameConfig) -> bool {
+    let phys = match SharedMap::open(game.physics_map) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    let gfx = match SharedMap::open(game.graphics_map) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    if SharedMap::open(game.static_map).is_err() {
+        return false;
+    }
+
+    let p1 = packet_id(phys.as_slice());
+    let g1 = packet_id(gfx.as_slice());
+    thread::sleep(Duration::from_millis(200));
+    let p2 = packet_id(phys.as_slice());
+    let g2 = packet_id(gfx.as_slice());
+
+    p2 != p1 || g2 != g1
+}
+
+/// Read packetId (little-endian i32 at offset 0) from a shared memory slice.
+fn packet_id(slice: &[u8]) -> i32 {
+    if slice.len() < 4 {
+        return 0;
+    }
+    i32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]])
 }
 
 #[cfg(test)]
@@ -104,5 +154,25 @@ mod tests {
     fn probe_returns_false_on_non_windows() {
         assert!(!probe(&AC1));
         assert!(!probe(&EVO));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn probe_live_returns_false_on_non_windows() {
+        assert!(!probe_live(&AC1));
+        assert!(!probe_live(&EVO));
+    }
+
+    #[test]
+    fn packet_id_reads_le_i32() {
+        assert_eq!(packet_id(&[0x01, 0x00, 0x00, 0x00]), 1);
+        assert_eq!(packet_id(&[0xFF, 0xFF, 0xFF, 0x7F]), i32::MAX);
+        assert_eq!(packet_id(&[0x00, 0x00, 0x00, 0x00]), 0);
+    }
+
+    #[test]
+    fn packet_id_returns_zero_on_short_slice() {
+        assert_eq!(packet_id(&[0x01, 0x02]), 0);
+        assert_eq!(packet_id(&[]), 0);
     }
 }

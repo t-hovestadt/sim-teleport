@@ -12,6 +12,9 @@ use crate::stats::Stats;
 
 const DETECT_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
+// When sim-bridge manages us (game: Some), it sends the shutdown signal on game exit.
+// Use a long safety-net timeout so menu/loading states don't cause reconnect loops.
+const MANAGED_RECONNECT_INTERVAL: Duration = Duration::from_secs(300);
 const STATIC_RESEND_INTERVAL: Duration = Duration::from_secs(10);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 const STATIC_CHANGE_BYTES: usize = 100;
@@ -103,10 +106,19 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
         let mut heartbeat_timer = Instant::now();
         let mut last_nonzero_tick = Instant::now();
 
+        // In managed mode (sim-bridge passes game: Some) rely on the shutdown signal
+        // for clean exit; use a long safety-net so menu / loading states don't loop.
+        let reconnect_timeout = if args.game.is_some() {
+            MANAGED_RECONNECT_INTERVAL
+        } else {
+            RECONNECT_INTERVAL
+        };
+
         let tick = Duration::from_micros(1_000_000 / args.poll_rate.max(1) as u64);
         let mut next_tick = Instant::now();
 
         let ActiveMaps { game, maps } = active;
+        let mut session_active = false;
 
         loop {
             if shutdown.try_recv().is_ok() {
@@ -160,8 +172,16 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 last_status = read_i32(maps[1].as_slice(), 4).unwrap_or(0);
             }
 
-            // Update the nonzero-tick tracker; used to detect game closure below.
-            if phys_id != 0 || gfx_id != 0 {
+            // Track session state (packetId advancing = active session).
+            let ticking = phys_id != 0 || gfx_id != 0;
+            if ticking && !session_active {
+                println!("[{}] Session started — forwarding telemetry", game.name);
+                session_active = true;
+            } else if !ticking && session_active {
+                println!("[{}] Session ended — waiting for next session", game.name);
+                session_active = false;
+            }
+            if ticking {
                 last_nonzero_tick = Instant::now();
             }
 
@@ -199,9 +219,10 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
             }
 
             // ── Reconnect / game-switch detection ─────────────────────────────────
-            // If all packetIds have been zero for RECONNECT_INTERVAL, the game has
-            // likely closed. Drop the maps and re-enter the detection loop.
-            if last_nonzero_tick.elapsed() >= RECONNECT_INTERVAL {
+            // If all packetIds have been zero for the timeout period, assume the game
+            // has closed. In managed mode (sim-bridge) the shutdown signal handles
+            // normal exits; this is a safety-net for crashes or unexpected closures.
+            if last_nonzero_tick.elapsed() >= reconnect_timeout {
                 drop(maps);
                 println!("{} disconnected. Waiting for game...", game.name);
                 stats.print_summary();
