@@ -440,7 +440,10 @@ impl AppSlot {
                             force_bind: true,
                             all: false,
                             local_forward: false,
-                            bind: cfg.network.source_ip.clone(),
+                            // Bind to all interfaces so we catch games that send UDP to
+                            // 127.0.0.1 (most games' default) as well as source_ip.
+                            // Binding source_ip alone misses localhost-addressed packets.
+                            bind: "0.0.0.0".to_string(),
                             high_priority: cfg.apps.high_priority,
                             scan_interval: cfg.detection.scan_interval,
                             grace_period: cfg.detection.drain_seconds,
