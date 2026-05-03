@@ -434,6 +434,39 @@ fn game_label(game: Option<ShmemGame>) -> &'static str {
     }
 }
 
+/// Run a full detection cycle: iRacing event probe, AC shmem probe (when needed),
+/// process scan (when needed for tiebreaker or sim-relay), then classify.
+/// Called only when the slot is Idle or Draining — never while Running.
+fn run_detection_cycle(config: &Config, scanner: &mut ProcessScanner) -> Option<Detection> {
+    let iracing_detected = config.apps.iracing_teleport_enabled && probe_iracing_event();
+
+    let ac_probe = if config.apps.ac_teleport_enabled && !iracing_detected {
+        probe_ac_maps()
+    } else {
+        AcProbeResult {
+            ac_evo: None,
+            ac1: None,
+        }
+    };
+
+    let need_process_scan = config.apps.ac_teleport_enabled
+        && (matches!(ac_probe.ac_evo, Some(ShmemDetection::Stale))
+            || matches!(
+                ac_probe.ac1,
+                Some(ShmemDetection::Live | ShmemDetection::Stale)
+            ))
+        || (config.apps.sim_relay_enabled
+            && !iracing_detected
+            && ac_probe.ac_evo.is_none()
+            && ac_probe.ac1.is_none());
+    if need_process_scan {
+        scanner.refresh();
+    }
+
+    // running_ac is None — this function is not called while Running.
+    detect_shmem_game(iracing_detected, &ac_probe, None, scanner, config)
+}
+
 // ── Main source loop ──────────────────────────────────────────────────────────
 
 pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
@@ -488,122 +521,59 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             break;
         }
 
-        // ── Detection ────────────────────────────────────────────────────────────
-        // Priority order: iRacing (event probe, ~1µs) → AC (shmem probe, ~100ms)
-        //                 → sim-relay (process scan, ~1ms).
-        // Each tier is only evaluated when higher tiers miss, keeping steady-state
-        // overhead to a single syscall when iRacing is active.
-
-        // Tier 1: iRacing — named event probe, no stale state possible.
-        let iracing_detected = config.apps.iracing_teleport_enabled && probe_iracing_event();
-
-        // Tier 2: AC shmem probe — skip when already committed (Running) to iRacing
-        // or an AC variant to avoid the 100ms sleep on every scan cycle.
-        let running_game = match &shmem.state {
-            SlotState::Running { game, .. } => Some(*game),
-            _ => None,
-        };
-        let skip_ac_probe = iracing_detected
-            || matches!(
-                running_game,
-                Some(ShmemGame::Iracing | ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc)
-            );
-        let ac_probe = if config.apps.ac_teleport_enabled && !skip_ac_probe {
-            probe_ac_maps()
-        } else {
-            AcProbeResult {
-                ac_evo: None,
-                ac1: None,
-            }
-        };
-
-        // Tier 3: Process scan — only when AC stale tiebreaker or sim-relay detection
-        // is needed. Skipped entirely when iRacing or a live AC game is detected.
-        let need_process_scan = config.apps.ac_teleport_enabled
-            && (matches!(ac_probe.ac_evo, Some(ShmemDetection::Stale))
-                || matches!(
-                    ac_probe.ac1,
-                    Some(ShmemDetection::Live | ShmemDetection::Stale)
-                ))
-            || (config.apps.sim_relay_enabled
-                && !iracing_detected
-                && ac_probe.ac_evo.is_none()
-                && ac_probe.ac1.is_none());
-        if need_process_scan {
-            scanner.refresh();
-        }
-
-        let running_ac = match running_game {
-            Some(g @ (ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc)) => Some(g),
-            _ => None,
-        };
-        let desired = detect_shmem_game(iracing_detected, &ac_probe, running_ac, &scanner, &config);
-
-        if shmem.is_running_finished() {
-            let name = game_label(shmem.current_game());
-            log.log(&format!("[{name}] Thread exited unexpectedly"));
-            let old = std::mem::replace(&mut shmem.state, SlotState::Idle);
-            drop(old);
-            shmem.failures.record(log, name);
-        }
-
-        // Pre-compute values that require a borrow on shmem.state so we can
-        // call mutable methods inside match arms without a borrow conflict.
-        let drain_expired = shmem
-            .drain_since()
-            .is_some_and(|s| s.elapsed() >= drain_timeout);
-        let draining_game = shmem.draining_game();
-
-        match (&shmem.state, desired.as_ref()) {
-            (SlotState::Idle, Some(d)) => {
-                shmem.start_shmem(d, &config, log);
-            }
-
-            (SlotState::Running { game: running, .. }, Some(d)) if *running == d.game => {}
-
-            (SlotState::Running { .. }, Some(d)) => {
-                let old_name = game_label(shmem.current_game());
-                log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
-                shmem.stop(log);
-                shmem.failures.reset();
-                shmem.start_shmem(d, &config, log);
-            }
-
-            (SlotState::Running { .. }, None) => {
+        if matches!(shmem.state, SlotState::Running { .. }) {
+            // Game is active — no probing, no scanning.
+            // The subsystem thread manages its own connection; we just watch for exit.
+            if shmem.is_running_finished() {
                 let name = game_label(shmem.current_game());
                 log.log(&format!(
                     "[{name}] Game closed — draining {}s",
                     config.detection.drain_seconds
                 ));
+                shmem.failures.record(log, name);
                 shmem.begin_drain();
             }
+        } else {
+            // Idle or Draining — run full detection cycle.
+            let desired = run_detection_cycle(&config, &mut scanner);
 
-            // Same game re-detected while draining — cancel shutdown (issue #5 fix).
-            (SlotState::Draining { .. }, Some(d)) if draining_game == Some(d.game) => {
-                log.log(&format!(
-                    "[{}] Game re-detected — cancelling shutdown",
-                    d.label
-                ));
-                shmem.cancel_drain();
+            let drain_expired = shmem
+                .drain_since()
+                .is_some_and(|s| s.elapsed() >= drain_timeout);
+            let draining_game = shmem.draining_game();
+
+            match (&shmem.state, desired.as_ref()) {
+                (SlotState::Idle, Some(d)) => {
+                    shmem.start_shmem(d, &config, log);
+                }
+
+                // Same game re-detected while draining — cancel shutdown.
+                (SlotState::Draining { .. }, Some(d)) if draining_game == Some(d.game) => {
+                    log.log(&format!(
+                        "[{}] Game re-detected — cancelling shutdown",
+                        d.label
+                    ));
+                    shmem.cancel_drain();
+                }
+
+                // Different game detected while draining — stop old, start new.
+                (SlotState::Draining { .. }, Some(d)) => {
+                    let old_name = game_label(shmem.current_game());
+                    log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
+                    shmem.stop(log);
+                    shmem.failures.reset();
+                    shmem.start_shmem(d, &config, log);
+                }
+
+                (SlotState::Draining { .. }, None) if drain_expired => {
+                    let name = game_label(shmem.current_game());
+                    log.log(&format!("[{name}] Stopped"));
+                    shmem.stop(log);
+                    shmem.failures.reset();
+                }
+
+                _ => {}
             }
-
-            // Different game detected while draining — stop old immediately, start new (issue #5).
-            (SlotState::Draining { .. }, Some(d)) => {
-                let old_name = game_label(shmem.current_game());
-                log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
-                shmem.stop(log);
-                shmem.failures.reset();
-                shmem.start_shmem(d, &config, log);
-            }
-
-            (SlotState::Draining { .. }, None) if drain_expired => {
-                let name = game_label(shmem.current_game());
-                log.log(&format!("[{name}] Stopped"));
-                shmem.stop(log);
-                shmem.failures.reset();
-            }
-
-            _ => {}
         }
 
         // Periodic status heartbeat every 60s.
