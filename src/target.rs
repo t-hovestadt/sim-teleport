@@ -1,7 +1,7 @@
 use lz4_flex::block::decompress_into;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use crate::game::{self, GameConfig};
@@ -27,6 +27,8 @@ pub struct TargetArgs {
     pub pin_core: Option<usize>,
     pub high_priority: bool,
     pub stale_timeout: Duration,
+    pub on_first_data: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub on_stale: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 // ── Map abstractions ──────────────────────────────────────────────────────────
@@ -272,6 +274,9 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                     if !first_frame_logged {
                         println!("[AC Teleport] First frame received ({decomp_len} bytes)");
                         first_frame_logged = true;
+                        if let Some(cb) = &args.on_first_data {
+                            cb();
+                        }
                     }
                     if let Some(start) = seq_start.take() {
                         let transit_us = start.elapsed().as_micros() as u64;
@@ -300,10 +305,18 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                                 args.stale_timeout.as_secs()
                             );
                             maps = None;
+                            first_frame_logged = false;
+                            if let Some(cb) = &args.on_stale {
+                                cb();
+                            }
                         }
                         Some(mode @ MapMode::Dual { .. }) => {
                             // Dual mode: keep maps alive but signal no active session.
                             mode.zero_status();
+                            first_frame_logged = false;
+                            if let Some(cb) = &args.on_stale {
+                                cb();
+                            }
                             // Reset so we don't re-zero on every subsequent timeout tick.
                             last_update = Instant::now();
                         }

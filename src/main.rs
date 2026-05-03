@@ -167,6 +167,8 @@ fn main() {
                     pin_core,
                     high_priority,
                     stale_timeout: Duration::from_secs(stale_timeout),
+                    on_first_data: None,
+                    on_stale: None,
                 },
                 rx,
             )
