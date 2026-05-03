@@ -303,9 +303,15 @@ maps for EVO, then AC1, and immediately closes them. Only after successful detec
 persistent map handles opened. This prevents stale handles from keeping maps alive after
 a game exits.
 
-After a game disconnects (all packetIds at zero for 5 s), source drops its map handles and
-re-enters the detection loop. The next game to start (same or different) is detected within
-2 s and forwarding resumes with fresh compression buffers sized for that game.
+After a game disconnects (all packetIds at zero for 5 s in standalone mode), source drops its
+map handles and re-enters the detection loop. The next game to start (same or different) is
+detected within 2 s and forwarding resumes with fresh compression buffers sized for that game.
+
+**Managed mode (under sim-bridge):** When sim-bridge launches ac-teleport with a specific game
+pre-selected, the disconnect timeout extends to 5 minutes. This keeps the connection alive while
+the game is on the menu or in a loading screen. sim-bridge sends an explicit shutdown signal
+when the game process exits, so the long timeout is only a safety net — normal transitions still
+happen promptly.
 
 ### Dual maps on target
 
