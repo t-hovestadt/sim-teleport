@@ -14,7 +14,10 @@ enum ShmemGame {
     AcEvo,
     Ac1,
     Acc,
-    SimRelay { id: &'static str, name: &'static str },
+    SimRelay {
+        id: &'static str,
+        name: &'static str,
+    },
 }
 
 struct Detection {
