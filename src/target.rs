@@ -73,7 +73,7 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
         let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         sock.set_reuse_address(true)?;
         sock.set_recv_buffer_size(512 * 1024)?;
-        let bind_addr: SocketAddr = format!("0.0.0.0:{}", group.port).parse().unwrap();
+        let bind_addr = SocketAddr::from(([0, 0, 0, 0], group.port));
         sock.bind(&bind_addr.into())?;
         let recv_socket: UdpSocket = sock.into();
         recv_socket.set_nonblocking(true)?;
@@ -83,7 +83,7 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
         let fwd_socket = UdpSocket::bind("0.0.0.0:0")?;
 
         let forward_addr = forward_override
-            .unwrap_or_else(|| format!("127.0.0.1:{}", group.port).parse().unwrap());
+            .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], group.port)));
 
         println!(
             "[{}] listening on 0.0.0.0:{} → {forward_addr}",

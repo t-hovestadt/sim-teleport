@@ -7,6 +7,9 @@ use clap::Parser;
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::games::PortGroup;
+// ProcessScanner is also implemented independently in sim-bridge/src/scanner.rs.
+// The duplication is intentional: each crate is self-contained and has no
+// dependency on the other at the library level.
 use crate::platform::{boost_thread_priority, set_high_priority, HighResTimer, ProcessScanner};
 use crate::stats::RelayStats;
 
@@ -118,11 +121,7 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
 
         let local_addr = if args.local_forward {
             let local_port = group.port.saturating_add(1000);
-            Some(
-                format!("127.0.0.1:{local_port}")
-                    .parse::<SocketAddr>()
-                    .unwrap(),
-            )
+            Some(SocketAddr::from(([127, 0, 0, 1], local_port)))
         } else {
             None
         };
