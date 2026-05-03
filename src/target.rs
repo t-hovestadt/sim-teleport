@@ -51,7 +51,8 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
     }
     let _timer = HighResTimer::acquire();
 
-    let selected = crate::games::select_games(&args.games, args.all)?;
+    let all = args.all || args.games.as_ref().is_none_or(|v| v.is_empty());
+    let selected = crate::games::select_games(&args.games, all)?;
     if selected.is_empty() {
         eprintln!("No games selected. Use --games <id,...> or --all.");
         return Ok(());

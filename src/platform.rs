@@ -6,6 +6,8 @@
 
 #[cfg(windows)]
 mod imp {
+    use std::collections::HashSet;
+
     use windows_sys::Win32::Media::{timeBeginPeriod, timeEndPeriod};
     use windows_sys::Win32::System::Threading::{
         GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetThreadPriority,
@@ -42,8 +44,6 @@ mod imp {
     }
 
     /// Raise the process to HIGH_PRIORITY_CLASS for lower OS scheduling jitter.
-    /// Safe on the SimHub PC. On the gaming PC this competes with the game's own
-    /// scheduling — only use it if you know the machine can handle it.
     pub fn set_high_priority() {
         let ok = unsafe { SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS) };
         if ok == 0 {
@@ -53,47 +53,71 @@ mod imp {
         }
     }
 
-    /// Check whether any process whose name (case-insensitive) matches one of
-    /// `names` is currently running. Used for --auto-detect on the source side.
-    pub fn is_process_running(names: &[&str]) -> bool {
-        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-            TH32CS_SNAPPROCESS,
-        };
-        unsafe {
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if snapshot == INVALID_HANDLE_VALUE {
-                return false;
+    /// One-snapshot process scanner. Call `refresh()` once per scan cycle to
+    /// populate the cache with all running exe names, then call `is_running()`
+    /// per-game for O(1) lookups instead of a fresh snapshot each time.
+    pub struct ProcessScanner {
+        running: HashSet<String>,
+    }
+
+    impl Default for ProcessScanner {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl ProcessScanner {
+        pub fn new() -> Self {
+            Self {
+                running: HashSet::new(),
             }
-            let mut entry: PROCESSENTRY32W = std::mem::zeroed();
-            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-            let mut found = false;
-            if Process32FirstW(snapshot, &mut entry) != 0 {
-                loop {
-                    let null_pos = entry
-                        .szExeFile
-                        .iter()
-                        .position(|&c| c == 0)
-                        .unwrap_or(entry.szExeFile.len());
-                    let exe = String::from_utf16_lossy(&entry.szExeFile[..null_pos]);
-                    if names.iter().any(|n| n.eq_ignore_ascii_case(&exe)) {
-                        found = true;
-                        break;
-                    }
-                    if Process32NextW(snapshot, &mut entry) == 0 {
-                        break;
+        }
+
+        pub fn refresh(&mut self) {
+            use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+            use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+                TH32CS_SNAPPROCESS,
+            };
+            self.running.clear();
+            unsafe {
+                let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+                if snapshot == INVALID_HANDLE_VALUE {
+                    return;
+                }
+                let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+                entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+                if Process32FirstW(snapshot, &mut entry) != 0 {
+                    loop {
+                        let null_pos = entry
+                            .szExeFile
+                            .iter()
+                            .position(|&c| c == 0)
+                            .unwrap_or(entry.szExeFile.len());
+                        let exe =
+                            String::from_utf16_lossy(&entry.szExeFile[..null_pos]).to_lowercase();
+                        self.running.insert(exe);
+                        if Process32NextW(snapshot, &mut entry) == 0 {
+                            break;
+                        }
                     }
                 }
+                CloseHandle(snapshot);
             }
-            CloseHandle(snapshot);
-            found
+        }
+
+        pub fn is_running(&self, names: &[&str]) -> bool {
+            names
+                .iter()
+                .any(|n| self.running.contains(&n.to_lowercase()))
         }
     }
 }
 
 #[cfg(not(windows))]
 mod imp {
+    use std::collections::HashSet;
+
     pub struct HighResTimer;
     impl HighResTimer {
         pub fn acquire() -> Self {
@@ -102,9 +126,26 @@ mod imp {
     }
     pub fn boost_thread_priority() {}
     pub fn set_high_priority() {}
-    pub fn is_process_running(_names: &[&str]) -> bool {
-        false
+
+    pub struct ProcessScanner {
+        _running: HashSet<String>,
+    }
+    impl Default for ProcessScanner {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+    impl ProcessScanner {
+        pub fn new() -> Self {
+            Self {
+                _running: HashSet::new(),
+            }
+        }
+        pub fn refresh(&mut self) {}
+        pub fn is_running(&self, _names: &[&str]) -> bool {
+            false
+        }
     }
 }
 
-pub use imp::{boost_thread_priority, is_process_running, set_high_priority, HighResTimer};
+pub use imp::{boost_thread_priority, set_high_priority, HighResTimer, ProcessScanner};

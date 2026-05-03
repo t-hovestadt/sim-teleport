@@ -7,6 +7,7 @@ pub struct GameDef {
     pub family: &'static str,
     pub default_port: u16,
     pub process_names: &'static [&'static str],
+    pub console: bool,
     pub notes: &'static str,
 }
 
@@ -15,6 +16,7 @@ pub struct PortGroup {
     pub display_name: String,
     pub id: String,
     pub process_names: Vec<&'static str>,
+    pub console: bool,
 }
 
 pub static GAMES: &[GameDef] = &[
@@ -25,6 +27,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Forza",
         default_port: 5300,
         process_names: &["ForzaMotorsport7.exe"],
+        console: false,
         notes: "Settings > HUD and Gameplay > Data Out > enable, Dash format.",
     },
     GameDef {
@@ -33,6 +36,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Forza",
         default_port: 5300,
         process_names: &["ForzaHorizon4.exe"],
+        console: false,
         notes: "Settings > HUD and Gameplay > Data Out > enable, Dash format.",
     },
     GameDef {
@@ -41,6 +45,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Forza",
         default_port: 5300,
         process_names: &["ForzaHorizon5.exe"],
+        console: false,
         notes: "Settings > HUD and Gameplay > Data Out > enable, Dash format.",
     },
     // ── Forza Motorsport 2023 (port 9876) ─────────────────────────────────────
@@ -50,6 +55,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Forza",
         default_port: 9876,
         process_names: &["ForzaMotorsport.exe"],
+        console: false,
         notes: "Settings > HUD and Gameplay > Data Out > enable.",
     },
     // ── Project CARS 2 API (port 5606) ────────────────────────────────────────
@@ -59,6 +65,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Project CARS 2",
         default_port: 5606,
         process_names: &["pCARS2AVX.exe", "pCARS2.exe"],
+        console: false,
         notes: "Enable UDP Frequency > 0 in game settings.",
     },
     GameDef {
@@ -67,6 +74,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Project CARS 2",
         default_port: 5606,
         process_names: &["AMS2AVX.exe", "AMS2.exe"],
+        console: false,
         notes: "Enable UDP Frequency > 0 in game settings.",
     },
     GameDef {
@@ -75,6 +83,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Project CARS 2",
         default_port: 5606,
         process_names: &["KartKraft.exe"],
+        console: false,
         notes: "Telemetry sent automatically.",
     },
     // ── BeamNG.drive (ports 9999 and 63392) ───────────────────────────────────
@@ -84,6 +93,7 @@ pub static GAMES: &[GameDef] = &[
         family: "BeamNG",
         default_port: 9999,
         process_names: &["BeamNG.drive.exe"],
+        console: false,
         notes: "Requires the SimHub telemetry mod installed in BeamNG.",
     },
     GameDef {
@@ -92,6 +102,7 @@ pub static GAMES: &[GameDef] = &[
         family: "BeamNG",
         default_port: 63392,
         process_names: &["BeamNG.drive.exe"],
+        console: false,
         notes: "Options > Other > OutGauge > enable, IP 127.0.0.1, port 63392.",
     },
     // ── Codemasters / EA Sports (port 20777) ──────────────────────────────────
@@ -101,6 +112,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["F1_25.exe"],
+        console: false,
         notes: "Game Options > Settings > Telemetry Settings > UDP On, port 20777.",
     },
     GameDef {
@@ -109,6 +121,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["F1_24.exe"],
+        console: false,
         notes: "Game Options > Settings > Telemetry Settings > UDP On, port 20777.",
     },
     GameDef {
@@ -117,6 +130,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["F1_23.exe"],
+        console: false,
         notes: "Game Options > Settings > Telemetry Settings > UDP On, port 20777.",
     },
     GameDef {
@@ -125,6 +139,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["F1_22.exe"],
+        console: false,
         notes: "Game Options > Settings > Telemetry Settings > UDP On, port 20777.",
     },
     GameDef {
@@ -133,6 +148,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["F1_21.exe"],
+        console: false,
         notes: "Game Options > Settings > Telemetry Settings > UDP On, port 20777.",
     },
     GameDef {
@@ -141,6 +157,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["F1_2020.exe"],
+        console: false,
         notes: "Game Options > Settings > Telemetry Settings > UDP On, port 20777.",
     },
     GameDef {
@@ -149,6 +166,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["F1_2019.exe"],
+        console: false,
         notes: "Game Options > Settings > Telemetry Settings > UDP On, port 20777.",
     },
     GameDef {
@@ -157,6 +175,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["F1_2018.exe"],
+        console: false,
         notes: "Game Options > Settings > Telemetry Settings > UDP On, port 20777.",
     },
     GameDef {
@@ -165,6 +184,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["dirtrally2.exe"],
+        console: false,
         notes: "Hardware Settings > enable UDP, port 20777.",
     },
     GameDef {
@@ -173,6 +193,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["dirt4.exe"],
+        console: false,
         notes: "Hardware Settings > enable UDP, port 20777.",
     },
     GameDef {
@@ -181,6 +202,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["DIRT5.exe"],
+        console: false,
         notes: "Hardware Settings > enable UDP, port 20777.",
     },
     GameDef {
@@ -189,6 +211,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["WRC.exe"],
+        console: false,
         notes: "Settings > Telemetry > enable UDP, port 20777.",
     },
     GameDef {
@@ -197,6 +220,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Codemasters",
         default_port: 20777,
         process_names: &["WRC24.exe", "WRC.exe"],
+        console: false,
         notes: "Settings > Telemetry > enable UDP, port 20777.",
     },
     // ── Wreckfest 2 (port 23123) ──────────────────────────────────────────────
@@ -206,16 +230,18 @@ pub static GAMES: &[GameDef] = &[
         family: "Wreckfest",
         default_port: 23123,
         process_names: &["Wreckfest2.exe"],
+        console: false,
         notes: "Telemetry sent automatically — no in-game config needed.",
     },
     // ── Gran Turismo (port 33740) ─────────────────────────────────────────────
-    // Console titles — no process to detect; always bind when selected.
+    // Console titles — PS4/PS5 only; no PC process to detect.
     GameDef {
         id: "gt7",
         name: "Gran Turismo 7",
         family: "Gran Turismo",
         default_port: 33740,
         process_names: &[],
+        console: true,
         notes: "Settings > Application > Machine Communication > Telemetry Port 33740.",
     },
     GameDef {
@@ -224,6 +250,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Gran Turismo",
         default_port: 33740,
         process_names: &[],
+        console: true,
         notes: "Settings > enable Telemetry (UDP), port 33740.",
     },
     // ── SCS Software / Giants (port 25555) ────────────────────────────────────
@@ -233,6 +260,7 @@ pub static GAMES: &[GameDef] = &[
         family: "SCS",
         default_port: 25555,
         process_names: &["eurotrucks2.exe"],
+        console: false,
         notes: "Install the SCS Telemetry plugin for SimHub.",
     },
     GameDef {
@@ -241,6 +269,7 @@ pub static GAMES: &[GameDef] = &[
         family: "SCS",
         default_port: 25555,
         process_names: &["amtrucks.exe"],
+        console: false,
         notes: "Install the SCS Telemetry plugin for SimHub.",
     },
     GameDef {
@@ -249,6 +278,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Giants",
         default_port: 25555,
         process_names: &["FarmingSimulator2022Game.exe"],
+        console: false,
         notes: "Install the SimHub telemetry mod for FS22.",
     },
     GameDef {
@@ -257,6 +287,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Giants",
         default_port: 25555,
         process_names: &["FarmingSimulator2025.exe"],
+        console: false,
         notes: "Install the SimHub telemetry mod for FS25.",
     },
     // ── Piboso / Live for Speed (port 30000) ──────────────────────────────────
@@ -266,6 +297,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Piboso",
         default_port: 30000,
         process_names: &["GPBikes.exe"],
+        console: false,
         notes: "Telemetry sent automatically.",
     },
     GameDef {
@@ -274,6 +306,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Piboso",
         default_port: 30000,
         process_names: &["MXBikes.exe"],
+        console: false,
         notes: "Telemetry sent automatically.",
     },
     GameDef {
@@ -282,6 +315,7 @@ pub static GAMES: &[GameDef] = &[
         family: "Piboso",
         default_port: 30000,
         process_names: &["KartRacingPro.exe"],
+        console: false,
         notes: "Telemetry sent automatically.",
     },
     GameDef {
@@ -290,6 +324,7 @@ pub static GAMES: &[GameDef] = &[
         family: "LFS",
         default_port: 30000,
         process_names: &["LFS.exe"],
+        console: false,
         notes: "Options > Output > OutSim > enable, port 30000.",
     },
     // ── DCS World (port 34380) ────────────────────────────────────────────────
@@ -299,6 +334,7 @@ pub static GAMES: &[GameDef] = &[
         family: "DCS",
         default_port: 34380,
         process_names: &["DCS.exe"],
+        console: false,
         notes: "Requires a DCS export script — see SimHub DCS setup guide.",
     },
     // ── X-Plane (port 49003) ─────────────────────────────────────────────────
@@ -308,6 +344,7 @@ pub static GAMES: &[GameDef] = &[
         family: "X-Plane",
         default_port: 49003,
         process_names: &["X-Plane.exe"],
+        console: false,
         notes: "Settings > Data Output > enable Network via UDP, port 49003.",
     },
     // ── NoLimits 2 (port 15151) ───────────────────────────────────────────────
@@ -317,6 +354,7 @@ pub static GAMES: &[GameDef] = &[
         family: "NoLimits2",
         default_port: 15151,
         process_names: &["NoLimits2.exe"],
+        console: false,
         notes: "Telemetry sent automatically when a coaster is running.",
     },
 ];
@@ -355,36 +393,39 @@ fn port_dedup(defs: Vec<&'static GameDef>) -> Vec<PortGroup> {
                 .flat_map(|d| d.process_names.iter().copied())
                 .collect();
             process_names.dedup();
+            let console = group_defs.iter().all(|d| d.console);
             PortGroup {
                 port,
                 display_name,
                 id,
                 process_names,
+                console,
             }
         })
         .collect()
 }
 
 pub fn select_games(games: &Option<Vec<String>>, all: bool) -> io::Result<Vec<PortGroup>> {
-    let defs: Vec<&'static GameDef> =
-        if all || games.as_ref().is_none_or(|v| v.is_empty()) {
-            GAMES.iter().collect()
-        } else {
-            let ids = games.as_ref().unwrap();
-            let mut selected = Vec::new();
-            for id in ids {
-                match GAMES.iter().find(|g| g.id == *id) {
-                    Some(def) => selected.push(def),
-                    None => return Err(io::Error::new(
+    let defs: Vec<&'static GameDef> = if all || games.as_ref().is_none_or(|v| v.is_empty()) {
+        GAMES.iter().collect()
+    } else {
+        let ids = games.as_ref().unwrap();
+        let mut selected = Vec::new();
+        for id in ids {
+            match GAMES.iter().find(|g| g.id == *id) {
+                Some(def) => selected.push(def),
+                None => {
+                    return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
                         format!(
                             "unknown game id '{id}' — run `sim-relay list` to see available games"
                         ),
-                    )),
+                    ))
                 }
             }
-            selected
-        };
+        }
+        selected
+    };
     Ok(port_dedup(defs))
 }
 
@@ -416,9 +457,14 @@ pub fn print_list() {
             .join(", ");
         println!("\n{family} (port {port_str})");
         for game in games.iter() {
+            let console_note = if game.console {
+                "  [console — use --include-console in auto mode]"
+            } else {
+                ""
+            };
             println!(
-                "  {:<18} {:<35} port {:>5}  {}",
-                game.id, game.name, game.default_port, game.notes
+                "  {:<18} {:<35} port {:>5}  {}{}",
+                game.id, game.name, game.default_port, game.notes, console_note
             );
         }
     }

@@ -23,10 +23,10 @@ enum Command {
         /// Target PC IP address
         #[arg(long, value_name = "IP")]
         target: String,
-        /// Comma-separated game IDs to forward (default: all)
+        /// Comma-separated game IDs to forward (default: auto-detect all)
         #[arg(long, value_name = "ID,...", value_delimiter = ',')]
         games: Option<Vec<String>>,
-        /// Forward all supported games
+        /// Bind all ports immediately, skip process detection
         #[arg(long)]
         all: bool,
         /// Also forward to localhost:<port+1000> for a local SimHub instance
@@ -38,9 +38,18 @@ enum Command {
         /// Set HIGH_PRIORITY_CLASS for this process
         #[arg(long)]
         high_priority: bool,
-        /// Only bind ports when the game process is detected running
+        /// How often to scan for game processes (seconds)
+        #[arg(long, default_value = "5", value_name = "SECS")]
+        scan_interval: u64,
+        /// How long to keep forwarding after a game exits (seconds)
+        #[arg(long, default_value = "15", value_name = "SECS")]
+        grace_period: u64,
+        /// Include console-only games (GT7, GT Sport) in auto-detect mode
         #[arg(long)]
-        auto_detect: bool,
+        include_console: bool,
+        /// Bind all ports immediately, skip process detection (alias for --all)
+        #[arg(long)]
+        force_bind: bool,
     },
     /// Receive forwarded telemetry and relay to SimHub on this PC
     Target {
@@ -77,7 +86,10 @@ fn main() -> io::Result<()> {
             local_forward,
             bind,
             high_priority,
-            auto_detect,
+            scan_interval,
+            grace_period,
+            include_console,
+            force_bind,
         } => {
             let (tx, rx) = mpsc::channel::<()>();
             ctrlc::set_handler(move || {
@@ -93,7 +105,10 @@ fn main() -> io::Result<()> {
                     local_forward,
                     bind,
                     high_priority,
-                    auto_detect,
+                    scan_interval,
+                    grace_period,
+                    include_console,
+                    force_bind,
                 },
                 rx,
             )

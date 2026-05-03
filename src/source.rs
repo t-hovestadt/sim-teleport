@@ -7,7 +7,7 @@ use clap::Parser;
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::games::PortGroup;
-use crate::platform::{boost_thread_priority, is_process_running, set_high_priority, HighResTimer};
+use crate::platform::{boost_thread_priority, set_high_priority, HighResTimer, ProcessScanner};
 use crate::stats::RelayStats;
 
 /// Capture game telemetry on this PC and forward to a target PC running SimHub.
@@ -17,10 +17,10 @@ pub struct Args {
     /// Target PC IP address
     #[arg(long, value_name = "IP")]
     pub target: String,
-    /// Comma-separated game IDs to forward (default: all)
+    /// Comma-separated game IDs to forward (default: auto-detect all)
     #[arg(long, value_name = "ID,...", value_delimiter = ',')]
     pub games: Option<Vec<String>>,
-    /// Forward all supported games
+    /// Bind all ports immediately, skip process detection
     #[arg(long)]
     pub all: bool,
     /// Also forward to localhost:<port+1000> for a local SimHub instance
@@ -32,21 +32,37 @@ pub struct Args {
     /// Set HIGH_PRIORITY_CLASS for this process
     #[arg(long)]
     pub high_priority: bool,
-    /// Only bind ports when the game process is detected running
+    /// How often to scan for game processes (seconds)
+    #[arg(long, default_value = "5", value_name = "SECS")]
+    pub scan_interval: u64,
+    /// How long to keep forwarding after a game exits (seconds)
+    #[arg(long, default_value = "15", value_name = "SECS")]
+    pub grace_period: u64,
+    /// Include console-only games (GT7, GT Sport) in auto-detect mode
     #[arg(long)]
-    pub auto_detect: bool,
+    pub include_console: bool,
+    /// Bind all ports immediately, skip process detection (alias for --all)
+    #[arg(long)]
+    pub force_bind: bool,
 }
 
-struct GameRelay {
+/// Phase of a relay — tracks detection/drain timing. Socket is kept separately.
+#[derive(Debug)]
+enum RelayPhase {
+    Idle,
+    Active,
+    Draining { since: Instant },
+}
+
+struct ManagedRelay {
     group: PortGroup,
     socket: Option<UdpSocket>,
+    phase: RelayPhase,
     target_addr: SocketAddr,
     local_addr: Option<SocketAddr>,
     stats: RelayStats,
     last_packet: Option<Instant>,
-    active: bool,
-    last_process_check: Instant,
-    process_running: bool,
+    first_packet: bool,
 }
 
 fn bind_socket(port: u16, bind_ip: &str) -> io::Result<UdpSocket> {
@@ -72,15 +88,25 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
     }
     let _timer = HighResTimer::acquire();
 
-    let selected = crate::games::select_games(&args.games, args.all)?;
+    let immediate_bind = args.all || args.force_bind;
+    let explicit_games = args.games.as_ref().is_some_and(|v| !v.is_empty());
+
+    let selected = if explicit_games {
+        crate::games::select_games(&args.games, false)?
+    } else {
+        crate::games::select_games(&None, true)?
+    };
+
     if selected.is_empty() {
-        eprintln!("No games selected. Use --games <id,...> or --all.");
+        eprintln!("No games selected.");
         return Ok(());
     }
 
     let target_ip = args.target.as_str();
+    let scan_interval = Duration::from_secs(args.scan_interval);
+    let grace_period = Duration::from_secs(args.grace_period);
 
-    let mut relays: Vec<GameRelay> = Vec::new();
+    let mut relays: Vec<ManagedRelay> = Vec::new();
     for group in selected {
         let target_addr: SocketAddr =
             format!("{target_ip}:{}", group.port).parse().map_err(|e| {
@@ -101,145 +127,201 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
             None
         };
 
-        let (socket, process_running) = if args.auto_detect {
-            // Start unbound; will bind when the game process is detected.
-            (None, false)
+        let (socket, phase) = if immediate_bind || explicit_games {
+            match bind_socket(group.port, &args.bind) {
+                Ok(s) => {
+                    println!(
+                        "[{}] listening on {}:{} \u{2192} {target_addr}",
+                        group.display_name, args.bind, group.port
+                    );
+                    (Some(s), RelayPhase::Active)
+                }
+                Err(e) => {
+                    return Err(io::Error::new(
+                        e.kind(),
+                        format!(
+                            "[{}] failed to bind port {}: {e}",
+                            group.display_name, group.port
+                        ),
+                    ));
+                }
+            }
         } else {
-            let s = bind_socket(group.port, &args.bind).map_err(|e| {
-                io::Error::new(
-                    e.kind(),
-                    format!(
-                        "[{}] failed to bind port {}: {e}",
-                        group.display_name, group.port
-                    ),
-                )
-            })?;
-            println!(
-                "[{}] listening on {}:{} → {target_addr}",
-                group.display_name, args.bind, group.port
-            );
-            (Some(s), true)
+            (None, RelayPhase::Idle)
         };
 
-        relays.push(GameRelay {
+        relays.push(ManagedRelay {
             group,
             socket,
+            phase,
             target_addr,
             local_addr,
             stats: RelayStats::new(),
             last_packet: None,
-            active: false,
-            // Subtract 6s so the first process-check fires immediately on the first loop iteration.
-            last_process_check: Instant::now() - Duration::from_secs(6),
-            process_running,
+            first_packet: true,
         });
     }
 
-    if args.auto_detect {
+    if immediate_bind || explicit_games {
+        println!("Forwarding to {} | Ctrl-C to stop", args.target);
+    } else {
+        #[cfg(not(windows))]
+        eprintln!(
+            "Warning: process scanning is not available on this platform. \
+             Use --all to bind immediately."
+        );
         println!(
-            "Auto-detect enabled: ports will bind only when the game process is detected running."
+            "Auto-detect: scanning every {}s, grace period {}s | Ctrl-C to stop",
+            args.scan_interval, args.grace_period
         );
     }
-    println!("Forwarding to {} | Ctrl-C to stop", args.target);
 
     let mut buf = [0u8; 65_536];
     let mut last_stats = Instant::now();
+    // Pre-subtract scan_interval so the first scan fires on the first iteration.
+    let mut last_scan = Instant::now() - scan_interval;
     let start = Instant::now();
+    let mut scanner = ProcessScanner::new();
 
     loop {
         if shutdown.try_recv().is_ok() {
             break;
         }
 
-        for relay in &mut relays {
-            if args.auto_detect && relay.last_process_check.elapsed() >= Duration::from_secs(5) {
-                let running = if relay.group.process_names.is_empty() {
-                    true // console game or no process detection; always bind
+        // ── Process scan (auto-detect mode only) ─────────────────────────────
+        if !immediate_bind && !explicit_games && last_scan.elapsed() >= scan_interval {
+            scanner.refresh();
+            last_scan = Instant::now();
+
+            for relay in &mut relays {
+                if relay.group.console && !args.include_console {
+                    continue;
+                }
+
+                let game_running = if relay.group.process_names.is_empty() {
+                    // console game with --include-console: treat as always running
+                    true
                 } else {
-                    is_process_running(&relay.group.process_names)
+                    scanner.is_running(&relay.group.process_names)
                 };
-                if running && relay.socket.is_none() {
-                    match bind_socket(relay.group.port, &args.bind) {
-                        Ok(s) => {
-                            println!(
-                                "[{}] process detected — bound port {}",
-                                relay.group.display_name, relay.group.port
-                            );
-                            relay.socket = Some(s);
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "[{}] failed to bind port {}: {e}",
-                                relay.group.display_name, relay.group.port
-                            );
+
+                let current_phase = std::mem::replace(&mut relay.phase, RelayPhase::Idle);
+                relay.phase = match current_phase {
+                    RelayPhase::Idle if game_running => {
+                        match bind_socket(relay.group.port, &args.bind) {
+                            Ok(s) => {
+                                println!(
+                                    "[{}] detected \u{2014} binding port {}",
+                                    relay.group.display_name, relay.group.port
+                                );
+                                relay.socket = Some(s);
+                                relay.first_packet = true;
+                                RelayPhase::Active
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "[{}] failed to bind port {}: {e}",
+                                    relay.group.display_name, relay.group.port
+                                );
+                                RelayPhase::Idle
+                            }
                         }
                     }
-                } else if !running && relay.socket.is_some() {
+                    RelayPhase::Active if !game_running => {
+                        println!(
+                            "[{}] exited \u{2014} draining for {}s",
+                            relay.group.display_name, args.grace_period
+                        );
+                        RelayPhase::Draining {
+                            since: Instant::now(),
+                        }
+                    }
+                    RelayPhase::Draining { since: _ } if game_running => {
+                        println!("[{}] returned \u{2014} resuming", relay.group.display_name);
+                        relay.first_packet = true;
+                        RelayPhase::Active
+                    }
+                    other => other,
+                };
+            }
+        }
+
+        // ── Grace-period expiry ───────────────────────────────────────────────
+        for relay in &mut relays {
+            if let RelayPhase::Draining { since } = relay.phase {
+                if since.elapsed() > grace_period {
                     relay.socket = None;
-                    relay.active = false;
+                    relay.phase = RelayPhase::Idle;
                     println!(
-                        "[{}] process gone — unbound port {}",
+                        "[{}] drain expired \u{2014} unbound port {}",
                         relay.group.display_name, relay.group.port
                     );
                 }
-                relay.process_running = running;
-                relay.last_process_check = Instant::now();
             }
+        }
 
-            let Some(ref socket) = relay.socket else {
-                continue;
+        // ── Packet forwarding ─────────────────────────────────────────────────
+        let mut any_active = false;
+        for relay in &mut relays {
+            let ManagedRelay {
+                ref socket,
+                ref mut stats,
+                ref mut last_packet,
+                ref target_addr,
+                ref local_addr,
+                ref group,
+                ref mut first_packet,
+                ..
+            } = *relay;
+
+            let sock = match socket {
+                Some(s) => s,
+                None => continue,
             };
+            any_active = true;
 
             loop {
-                match socket.recv_from(&mut buf) {
+                match sock.recv_from(&mut buf) {
                     Ok((len, _src)) => {
                         let t0 = Instant::now();
-                        let _ = socket.send_to(&buf[..len], relay.target_addr);
-                        if let Some(local) = relay.local_addr {
-                            let _ = socket.send_to(&buf[..len], local);
+                        let _ = sock.send_to(&buf[..len], *target_addr);
+                        if let Some(local) = *local_addr {
+                            let _ = sock.send_to(&buf[..len], local);
                         }
                         let fwd_us = t0.elapsed().as_micros() as u64;
-                        relay.stats.record(len, fwd_us);
-                        if !relay.active {
-                            relay.active = true;
+                        stats.record(len, fwd_us);
+                        if *first_packet {
+                            *first_packet = false;
                             println!(
                                 "[{}] data flowing \u{2192} {}",
-                                relay.group.display_name, relay.target_addr
+                                group.display_name, target_addr
                             );
                         }
-                        relay.last_packet = Some(Instant::now());
+                        *last_packet = Some(Instant::now());
                     }
                     Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                     Err(e) => {
-                        eprintln!("[{}] recv error: {e}", relay.group.id);
+                        eprintln!("[{}] recv error: {e}", group.id);
                         break;
                     }
                 }
             }
-
-            if relay.active
-                && relay
-                    .last_packet
-                    .is_none_or(|t| t.elapsed() > Duration::from_secs(10))
-            {
-                relay.active = false;
-                println!(
-                    "[{}] no data for 10 s — game likely paused or closed",
-                    relay.group.display_name
-                );
-            }
         }
 
+        // ── Stats ─────────────────────────────────────────────────────────────
         if last_stats.elapsed() >= Duration::from_secs(5) {
             for relay in &mut relays {
-                relay
-                    .stats
-                    .maybe_print(&relay.group.display_name, relay.active);
+                let active = matches!(relay.phase, RelayPhase::Active);
+                relay.stats.maybe_print(&relay.group.display_name, active);
             }
             last_stats = Instant::now();
         }
 
-        std::thread::sleep(Duration::from_micros(100));
+        if any_active {
+            std::thread::sleep(Duration::from_micros(100));
+        } else {
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
 
     let elapsed = start.elapsed();

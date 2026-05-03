@@ -48,7 +48,7 @@ Rename the downloaded files to `source.exe`, `target.exe`, and `sim-relay.exe` a
 ```
 source.exe --target <SimHub-PC-IP>
 ```
-Binds all supported game ports and forwards every packet to the target machine.
+Scans for running game processes every 5 seconds. When it detects a supported game it binds that port and starts forwarding. When the game exits it drains for 15 seconds then releases the port. No flags needed — start it once and leave it running.
 
 **SimHub PC (optional — only needed if SimHub is on a non-default port):**
 ```
@@ -177,12 +177,15 @@ Piboso titles send automatically. LFS: Options → Output → OutSim → enable,
 | Flag | source | target | Default | Description |
 |------|:------:|:------:|---------|-------------|
 | `--target <IP>` | ✓ | | — | **Required for source.** Target PC IP address |
-| `--games <id,...>` | ✓ | ✓ | (all) | Comma-separated game IDs to forward/receive |
-| `--all` | ✓ | ✓ | off | Forward/listen on all supported games |
+| `--games <id,...>` | ✓ | ✓ | (auto) | Comma-separated game IDs to forward/receive |
+| `--all` | ✓ | ✓ | off | Bind all ports immediately, skip process detection |
+| `--force-bind` | ✓ | | off | Alias for `--all` |
+| `--scan-interval <SECS>` | ✓ | | `5` | How often to scan for game processes |
+| `--grace-period <SECS>` | ✓ | | `15` | How long to keep forwarding after a game exits |
+| `--include-console` | ✓ | | off | Include GT7/GT Sport in auto-detect (no PC process; always bind) |
 | `--local-forward` | ✓ | | off | Also forward to `localhost:<port+1000>` for a local SimHub instance |
 | `--bind <IP>` | ✓ | | `0.0.0.0` | Bind address for listen sockets |
 | `--high-priority` | ✓ | ✓ | off | Raise process to `HIGH_PRIORITY_CLASS` for lower scheduling jitter |
-| `--auto-detect` | ✓ | | off | Only bind a port when that game's process is detected running; releases port when game closes |
 | `--source <IP>` | | ✓ | — | Source PC IP (informational only) |
 | `--forward-to <IP:PORT>` | | ✓ | `127.0.0.1:<game_port>` | Override forwarding destination |
 | `--busy-wait` | | ✓ | off | Spin on recv instead of sleeping (lower latency, higher CPU) |
@@ -304,25 +307,25 @@ Setting names vary by NIC manufacturer — look for equivalents if the exact nam
 
 **4. Bat files**
 
-`start-source-all.bat` on the **gaming PC** — place it next to `source.exe`:
+`start-source.bat` on the **gaming PC** — place it next to `source.exe`:
 
 ```batch
 @echo off
 cd /d "%~dp0"
-source.exe --target 192.168.50.2 --all
+source.exe --target 192.168.50.2
 pause
 ```
 
-`start-target-all.bat` on the **SimHub PC** — place it next to `target.exe`:
+`start-target.bat` on the **SimHub PC** — place it next to `target.exe`:
 
 ```batch
 @echo off
 cd /d "%~dp0"
-target.exe --all
+target.exe
 pause
 ```
 
-Pre-built bat files for common setups are included in the release download.
+Both bat files are included in the release download. Edit `start-source.bat` to replace `192.168.50.2` with your SimHub PC's IP address.
 
 **Troubleshooting**
 
@@ -361,18 +364,39 @@ source.exe --target 192.168.50.2 --all --local-forward
 
 ---
 
-## Auto-Detect Mode
+## Auto-Detection
 
-With `--auto-detect`, sim-relay source polls the running process list every 5 seconds. It only
-binds a game's UDP port when that game's executable is detected, and releases the port when the
-process disappears. This prevents port conflicts with other apps when the game isn't running.
+Auto-detection is the **default** in v0.1.4. No flags needed:
 
 ```
-source.exe --target 192.168.50.2 --all --auto-detect
+source.exe --target 192.168.50.2
 ```
 
-Process detection is Windows-only. On other platforms `--auto-detect` has no effect — ports are
-bound at startup as usual.
+**How it works:**
+- Every 5 seconds (configurable with `--scan-interval`) sim-relay takes a single Windows process snapshot and checks which games are running.
+- When a game process is detected, the corresponding UDP port is bound and forwarding starts. You'll see `[F1 25] detected — binding port 20777`.
+- When the game process exits, forwarding continues for a 15-second grace period (configurable with `--grace-period`) to flush any last packets. Then the port is released. You'll see `[F1 25] drain expired — unbound port 20777`.
+- If a game restarts while the grace period is still running, the relay resumes immediately without waiting.
+
+**State transitions:**
+
+```
+Idle ──(game detected)──► Active ──(game exits)──► Draining ──(grace expires)──► Idle
+                                                        │
+                                                  (game returns)
+                                                        │
+                                                        ▼
+                                                      Active
+```
+
+**Console games (GT7, Gran Turismo Sport):** These run on a PS4/PS5 — there is no Windows process to detect. In auto-detect mode they are skipped by default. Pass `--include-console` to always bind port 33740.
+
+**Skip detection entirely:** Use `--all` to bind all 13 ports at startup (the v0.1.3 behavior):
+```
+source.exe --target 192.168.50.2 --all
+```
+
+Process detection is Windows-only. On other platforms auto-detect mode prints a warning and you should use `--all`.
 
 ---
 

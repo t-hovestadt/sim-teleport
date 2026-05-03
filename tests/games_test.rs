@@ -1,4 +1,5 @@
 use sim_relay::games::select_games;
+use sim_relay::platform::ProcessScanner;
 
 #[test]
 fn select_all_deduplicates_to_thirteen_ports() {
@@ -36,4 +37,43 @@ fn select_mixed_family_port_uses_port_display_name() {
     let groups = select_games(&ids, false).unwrap();
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].display_name, "port 25555");
+}
+
+#[test]
+fn console_flag_set_for_gt7_port() {
+    let ids = Some(vec!["gt7".to_string()]);
+    let groups = select_games(&ids, false).unwrap();
+    assert_eq!(groups.len(), 1);
+    assert!(
+        groups[0].console,
+        "GT7 port group should be marked console=true"
+    );
+}
+
+#[test]
+fn console_flag_unset_for_pc_games() {
+    let ids = Some(vec!["f1-25".to_string()]);
+    let groups = select_games(&ids, false).unwrap();
+    assert_eq!(groups.len(), 1);
+    assert!(
+        !groups[0].console,
+        "F1 25 port group should be console=false"
+    );
+}
+
+#[test]
+fn process_scanner_returns_false_for_unknown_process() {
+    let mut scanner = ProcessScanner::new();
+    scanner.refresh();
+    // An exe that will never be running in CI or on a dev machine.
+    assert!(!scanner.is_running(&["sim_relay_nonexistent_game_xyz.exe"]));
+}
+
+#[test]
+fn process_scanner_is_running_case_insensitive() {
+    let mut scanner = ProcessScanner::new();
+    scanner.refresh();
+    // Querying with different casing should behave the same (not panic).
+    let _ = scanner.is_running(&["SIM_RELAY_NONEXISTENT.EXE"]);
+    let _ = scanner.is_running(&["sim_relay_nonexistent.exe"]);
 }
