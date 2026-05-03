@@ -82,8 +82,8 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
         // preventing loopback packets from being re-received by this same socket.
         let fwd_socket = UdpSocket::bind("0.0.0.0:0")?;
 
-        let forward_addr = forward_override
-            .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], group.port)));
+        let forward_addr =
+            forward_override.unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], group.port)));
 
         println!(
             "[{}] listening on 0.0.0.0:{} → {forward_addr}",

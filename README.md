@@ -23,8 +23,10 @@ the game were running locally.
 
 No compression, no framing, no state — raw UDP bytes in, raw UDP bytes out.
 
-**Companion to [iracing-teleport](../teleport/)**, which handles iRacing via shared
-memory. sim-relay covers games that broadcast UDP telemetry natively.
+**Companion projects:**
+- [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) — iRacing (shared memory, not UDP)
+- [ac-teleport](https://github.com/t-hovestadt/ac-teleport) — Assetto Corsa / ACE (shared memory)
+- [sim-bridge](https://github.com/t-hovestadt/sim-bridge) — unified single-binary launcher for all three
 
 ---
 
