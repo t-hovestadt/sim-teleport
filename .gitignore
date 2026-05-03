@@ -1,3 +1,4 @@
 /target
 sim-bridge.toml
 *.log
+*.exe

@@ -111,14 +111,21 @@ impl AppSlot {
             .name(name.to_string())
             .spawn(move || match game {
                 ShmemGame::Iracing => {
+                    // Bind to source_ip:port so firewall rules pass resync packets
+                    // from the target back to this exact address (issue #2).
                     if let Err(e) = teleport::run_source(
                         teleport::SourceConfig {
                             target: format!(
                                 "{}:{}",
                                 cfg.network.target_ip, cfg.ports.iracing_teleport
                             ),
-                            bind: "0.0.0.0:0".to_string(),
+                            bind: format!(
+                                "{}:{}",
+                                cfg.network.source_ip, cfg.ports.iracing_teleport
+                            ),
                             unicast: true,
+                            high_priority: cfg.apps.high_priority,
+                            busy_wait: cfg.apps.busy_wait,
                             ..teleport::SourceConfig::default()
                         },
                         rx,
@@ -127,6 +134,7 @@ impl AppSlot {
                     }
                 }
                 ShmemGame::AcTeleport => {
+                    // Bind to source_ip:port for consistent firewall targeting (issue #3).
                     // game: None → ac-teleport probes shared memory to auto-detect
                     // the exact variant (EVO / AC1 / ACC) at startup.
                     if let Err(e) = ac_teleport::source::run(
@@ -136,11 +144,14 @@ impl AppSlot {
                                 "{}:{}",
                                 cfg.network.target_ip, cfg.ports.ac_teleport
                             ),
-                            bind: format!("0.0.0.0:{}", cfg.ports.ac_teleport),
+                            bind: format!(
+                                "{}:{}",
+                                cfg.network.source_ip, cfg.ports.ac_teleport
+                            ),
                             unicast: true,
-                            busy_wait: false,
+                            busy_wait: cfg.apps.busy_wait,
                             pin_core: None,
-                            high_priority: false,
+                            high_priority: cfg.apps.high_priority,
                             poll_rate: 60,
                         },
                         rx,
@@ -171,7 +182,7 @@ impl AppSlot {
                         all: false,
                         local_forward: false,
                         bind: "0.0.0.0".to_string(),
-                        high_priority: false,
+                        high_priority: cfg.apps.high_priority,
                         scan_interval: cfg.detection.scan_interval,
                         grace_period: cfg.detection.drain_seconds,
                         include_console: false,
@@ -202,15 +213,27 @@ impl AppSlot {
         }
     }
 
-    fn stop(&mut self) {
-        let state = std::mem::replace(&mut self.state, SlotState::Idle);
+    // Send shutdown signal then wait up to 5 seconds. If the thread is still
+    // blocked (e.g. iRacing WaitForSingleObject hasn't fired), detach rather
+    // than hanging the orchestrator — the thread will exit on its own once the
+    // OS timeout fires (issue #4).
+    fn stop(&mut self, log: &Logger) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
         }
+        let state = std::mem::replace(&mut self.state, SlotState::Idle);
         match state {
             SlotState::Running { handle, .. }
             | SlotState::Draining { handle, .. }
             | SlotState::AlwaysOn { handle } => {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while !handle.is_finished() {
+                    if Instant::now() >= deadline {
+                        log.log(&format!("[{}] Thread still exiting — detaching", self.name));
+                        return; // handle dropped here, thread detaches
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
                 let _ = handle.join();
             }
             SlotState::Idle => {}
@@ -236,6 +259,13 @@ impl AppSlot {
     fn current_game(&self) -> Option<ShmemGame> {
         match &self.state {
             SlotState::Running { game, .. } | SlotState::Draining { game, .. } => Some(*game),
+            _ => None,
+        }
+    }
+
+    fn draining_game(&self) -> Option<ShmemGame> {
+        match &self.state {
+            SlotState::Draining { game, .. } => Some(*game),
             _ => None,
         }
     }
@@ -274,6 +304,13 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
         "Ports: iRacing {} | AC {} | Sim Relay (native game ports)",
         config.ports.iracing_teleport, config.ports.ac_teleport
     ));
+    // Issue #14: log enabled/disabled status so users can confirm config is applied.
+    log.log(&format!(
+        "Apps: iRacing [{}] | AC [{}] | Sim Relay [{}]",
+        if config.apps.iracing_teleport_enabled { "enabled" } else { "disabled" },
+        if config.apps.ac_teleport_enabled { "enabled" } else { "disabled" },
+        if config.apps.sim_relay_enabled { "enabled" } else { "disabled" },
+    ));
 
     let scan_interval = Duration::from_secs(config.detection.scan_interval);
     let drain_timeout = Duration::from_secs(config.detection.drain_seconds);
@@ -307,11 +344,12 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             shmem.failures.record(log, name);
         }
 
-        // Pre-compute drain expiry to avoid holding a borrow on shmem.state
-        // while calling mutable methods inside match arms.
+        // Pre-compute values that require a borrow on shmem.state so we can
+        // call mutable methods inside match arms without a borrow conflict.
         let drain_expired = shmem
             .drain_since()
             .is_some_and(|s| s.elapsed() >= drain_timeout);
+        let draining_game = shmem.draining_game();
 
         match (&shmem.state, desired.as_ref()) {
             (SlotState::Idle, Some(d)) => {
@@ -323,7 +361,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             (SlotState::Running { .. }, Some(d)) => {
                 let old_name = game_label(shmem.current_game());
                 log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
-                shmem.stop();
+                shmem.stop(log);
                 shmem.failures.reset();
                 shmem.start_shmem(d, &config, log);
             }
@@ -337,15 +375,25 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
                 shmem.begin_drain();
             }
 
-            (SlotState::Draining { .. }, Some(d)) => {
+            // Same game re-detected while draining — cancel shutdown (issue #5 fix).
+            (SlotState::Draining { .. }, Some(d)) if draining_game == Some(d.game) => {
                 log.log(&format!("[{}] Game re-detected — cancelling shutdown", d.label));
                 shmem.cancel_drain();
+            }
+
+            // Different game detected while draining — stop old immediately, start new (issue #5).
+            (SlotState::Draining { .. }, Some(d)) => {
+                let old_name = game_label(shmem.current_game());
+                log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
+                shmem.stop(log);
+                shmem.failures.reset();
+                shmem.start_shmem(d, &config, log);
             }
 
             (SlotState::Draining { .. }, None) if drain_expired => {
                 let name = game_label(shmem.current_game());
                 log.log(&format!("[{name}] Stopped"));
-                shmem.stop();
+                shmem.stop(log);
                 shmem.failures.reset();
             }
 
@@ -360,7 +408,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     }
 
     log.log("Shutting down...");
-    shmem.stop();
-    relay.stop();
+    shmem.stop(log);
+    relay.stop(log);
     log.log("All apps stopped. Goodbye.");
 }

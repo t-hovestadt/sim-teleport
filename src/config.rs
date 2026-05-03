@@ -5,10 +5,16 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default = "default_mode")]
+    pub mode: String,
     pub network: NetworkConfig,
     pub ports: PortsConfig,
     pub detection: DetectionConfig,
     pub apps: AppsConfig,
+}
+
+fn default_mode() -> String {
+    "source".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,11 +40,16 @@ pub struct AppsConfig {
     pub iracing_teleport_enabled: bool,
     pub ac_teleport_enabled: bool,
     pub sim_relay_enabled: bool,
+    #[serde(default)]
+    pub high_priority: bool,
+    #[serde(default)]
+    pub busy_wait: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
+            mode: "source".to_string(),
             network: NetworkConfig {
                 source_ip: "192.168.50.1".to_string(),
                 target_ip: "192.168.50.2".to_string(),
@@ -55,6 +66,8 @@ impl Default for Config {
                 iracing_teleport_enabled: true,
                 ac_teleport_enabled: true,
                 sim_relay_enabled: true,
+                high_priority: false,
+                busy_wait: false,
             },
         }
     }
@@ -84,6 +97,9 @@ pub fn write_config(config: &Config, path: &PathBuf) -> anyhow::Result<()> {
         r#"# sim-bridge configuration
 # Place next to sim-bridge.exe, or at %APPDATA%\sim-bridge\sim-bridge.toml
 
+# PC role: "source" (gaming PC) or "target" (SimHub PC)
+mode = "{mode}"
+
 [network]
 # Source PC IP (gaming PC where games run)
 source_ip = "{source_ip}"
@@ -107,7 +123,11 @@ drain_seconds = {drain_seconds}
 iracing_teleport_enabled = {iracing_enabled}
 ac_teleport_enabled = {ac_enabled}
 sim_relay_enabled = {relay_enabled}
+# Performance options
+high_priority = {high_priority}
+busy_wait = {busy_wait}
 "#,
+        mode = config.mode,
         source_ip = config.network.source_ip,
         target_ip = config.network.target_ip,
         iracing_port = config.ports.iracing_teleport,
@@ -117,6 +137,8 @@ sim_relay_enabled = {relay_enabled}
         iracing_enabled = config.apps.iracing_teleport_enabled,
         ac_enabled = config.apps.ac_teleport_enabled,
         relay_enabled = config.apps.sim_relay_enabled,
+        high_priority = config.apps.high_priority,
+        busy_wait = config.apps.busy_wait,
     );
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -159,6 +181,19 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
     println!("=== sim-bridge setup ===");
     println!();
 
+    // Mode
+    println!("Is this the gaming PC or the SimHub PC?");
+    println!("  [1] Source — games run here (default)");
+    println!("  [2] Target — SimHub runs here");
+    print!("> ");
+    io::stdout().flush()?;
+    let input = read_line();
+    config.mode = if input == "2" {
+        "target".to_string()
+    } else {
+        "source".to_string()
+    };
+
     print!("This PC's IP (source/gaming PC): [{}] ", config.network.source_ip);
     io::stdout().flush()?;
     let input = read_line();
@@ -195,7 +230,7 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
     println!();
     println!("Config saved to {}", save_path.display());
     println!();
-    println!("To start now:     sim-bridge source");
+    println!("To start now:     sim-bridge {}", config.mode);
     println!("To start on boot: sim-bridge install");
 
     Ok(config)
