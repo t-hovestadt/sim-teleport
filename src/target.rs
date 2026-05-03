@@ -272,6 +272,8 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 if let Some((clen, decomp_len)) = compressed_len {
                     if !first_frame_logged {
                         println!("[AC Teleport] First frame received ({decomp_len} bytes)");
+                        println!("[AC Teleport] Tip: if SimHub shows no data, enable the Assetto Corsa plugin:");
+                        println!("[AC Teleport]   SimHub > Settings > In-game apps tab > Assetto Corsa > enable");
                         first_frame_logged = true;
                         if let Some(cb) = &args.on_first_data {
                             cb();
