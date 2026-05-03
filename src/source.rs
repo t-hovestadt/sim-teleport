@@ -11,7 +11,9 @@ use crate::scanner::ProcessScanner;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShmemGame {
     Iracing,
-    AcTeleport,
+    AcEvo,
+    Ac1,
+    Acc,
 }
 
 struct Detection {
@@ -29,19 +31,19 @@ fn detect_shmem_game(scanner: &ProcessScanner, cfg: &Config) -> Option<Detection
     if cfg.apps.ac_teleport_enabled {
         if scanner.is_running(&["AssettoCorsa_EVO.exe", "assettocorsaevo.exe"]) {
             return Some(Detection {
-                game: ShmemGame::AcTeleport,
+                game: ShmemGame::AcEvo,
                 label: "Assetto Corsa EVO",
             });
         }
         if scanner.is_running(&["acs.exe"]) {
             return Some(Detection {
-                game: ShmemGame::AcTeleport,
+                game: ShmemGame::Ac1,
                 label: "Assetto Corsa",
             });
         }
         if scanner.is_running(&["acc.exe"]) {
             return Some(Detection {
-                game: ShmemGame::AcTeleport,
+                game: ShmemGame::Acc,
                 label: "Assetto Corsa Competizione",
             });
         }
@@ -199,9 +201,16 @@ impl AppSlot {
                         eprintln!("[{name}] iRacing Teleport: {e}");
                     }
                 }
-                ShmemGame::AcTeleport => {
-                    // game: None → ac-teleport probes shared memory to auto-detect
-                    // the exact variant (EVO / AC1 / ACC) at startup.
+                ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc => {
+                    // Tell ac-teleport exactly which maps to open so it is not fooled
+                    // by stale maps left over from a previously closed AC variant.
+                    let game_cfg: Option<&'static ac_teleport::GameConfig> = match game {
+                        ShmemGame::AcEvo => Some(&ac_teleport::EVO),
+                        ShmemGame::Ac1 => Some(&ac_teleport::AC1),
+                        // ACC map format is unconfirmed; fall back to auto-detect.
+                        ShmemGame::Acc => None,
+                        _ => unreachable!(),
+                    };
                     let (target, bind) = if cfg.network.unicast {
                         (
                             format!("{}:{}", cfg.network.target_ip, cfg.ports.ac_teleport),
@@ -215,7 +224,7 @@ impl AppSlot {
                     };
                     if let Err(e) = ac_teleport::source::run(
                         ac_teleport::SourceArgs {
-                            game: None,
+                            game: game_cfg,
                             target,
                             bind,
                             unicast: cfg.network.unicast,
@@ -374,7 +383,7 @@ impl AppSlot {
 fn game_label(game: Option<ShmemGame>) -> &'static str {
     match game {
         Some(ShmemGame::Iracing) => "iRacing Teleport",
-        Some(ShmemGame::AcTeleport) => "AC Teleport",
+        Some(ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc) => "AC Teleport",
         None => "app",
     }
 }
