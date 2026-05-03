@@ -143,13 +143,15 @@ Source PC (gaming)                Target PC (SimHub)
     |    \- teleport source          |- AC Teleport       :5001
     |- AC/EVO/ACC detected           \- Sim Relay         (game ports)
     |    \- ac-teleport source
-    \- Sim Relay (always on)
+    \- UDP game detected
          \- sim-relay source
 ```
 
-Three telemetry engines in one binary. On the source, shared-memory apps
-(iRacing, AC) start and stop based on which game is running. Sim Relay runs
-continuously and handles its own game detection for UDP titles.
+Three telemetry engines in one binary. On the source, **only one game streams
+telemetry at a time**. sim-bridge detects all running games — shared-memory
+(iRacing, AC variants) and UDP relay titles — and enforces priority:
+iRacing > AC variants > UDP relay games. When the active game exits, the next
+highest-priority detected game takes over after a 20-second drain period.
 
 On the target, all three receivers run simultaneously. Each blocks on
 `recv()` and costs zero CPU when idle. Crashed threads restart automatically
@@ -171,7 +173,7 @@ with exponential backoff.
 Only one shared-memory game runs at a time on the source. If you close one
 and open another, sim-bridge switches automatically within one scan interval (default 3 s).
 
-**UDP relay (auto-detected by sim-relay, always running on source):**
+**UDP relay (auto-detected by sim-bridge, started on demand):**
 
 Run `sim-bridge list` for the full list of 35+ supported titles including
 F1 25, Forza Motorsport, Forza Horizon 5, Project Cars 2, Automobilista 2,
