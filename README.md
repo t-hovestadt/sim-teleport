@@ -391,15 +391,70 @@ default mode to register.
 | `simhub.path` | *(default install)* | Path to `SimHubWPF.exe`. Defaults to `C:\Program Files (x86)\SimHub\SimHubWPF.exe`. |
 | `simhub.iracing` | `"iRacing"` | SimHub game code passed to `-switchgame` when iRacing telemetry starts. |
 | `simhub.ac` | `"AssettoCorsa"` | SimHub game code passed to `-switchgame` when AC/EVO/ACC telemetry starts. |
+| `simhub.relay.<id>` | *(none)* | SimHub game code for a sim-relay game. Key is the sim-relay game ID (e.g. `wreckfest2`). |
 
 The `[simhub]` section is optional. When configured (or when `SimHubWPF.exe` exists at the
 default path), sim-bridge runs `SimHubWPF.exe -switchgame <code>` once when telemetry from a
 new game is first received on the target PC. Resets automatically when the stale timeout fires
 so the next session re-triggers the switch.
 
+To enable auto-switching for a sim-relay game, add its code to `[simhub.relay]`:
+
+```toml
+[simhub.relay]
+wreckfest2 = "Wreckfest2"
+f1-25      = "F12025"
+```
+
+SimHub game codes are the internal names SimHub uses for each title. If unsure, check SimHub's
+game list or the SimHub forum for the correct code string.
+
 The config file is looked up next to `sim-bridge.exe` first, then at
 `%APPDATA%\sim-bridge\sim-bridge.toml`. If neither exists, built-in defaults
 apply and CLI flags alone control all behaviour.
+
+---
+
+## Troubleshooting: SimHub not showing telemetry
+
+### Assetto Corsa / ACE / ACC
+
+SimHub requires the AC plugin to be **enabled manually** on the target PC, even if AC is not
+installed there.
+
+1. Open SimHub on the target PC.
+2. Go to **Settings** → **In-game apps** tab.
+3. Find **Assetto Corsa** in the list and enable it.
+4. Restart SimHub.
+
+SimHub will then open the `acpmf_physics`, `acpmf_graphics`, and `acpmf_static` shared memory
+maps created by sim-bridge. The target log prints a reminder when the first frame arrives.
+
+### Wreckfest 2 and other sim-relay games
+
+Verify data is flowing: the target log should show:
+
+```
+[Wreckfest 2] traffic received → 127.0.0.1:23123
+```
+
+If that line is present, telemetry is arriving at the correct port and SimHub should read it.
+If SimHub still shows nothing:
+
+- SimHub 2025 and later include Wreckfest 2 support. Earlier versions may not recognise the
+  packet format — update SimHub if needed.
+- SimHub auto-switching requires the game code to be configured in `[simhub.relay]` (see
+  Config fields above). Without it, sim-bridge won't call `-switchgame`, so SimHub may stay
+  on the wrong game overlay.
+
+### General checklist
+
+| Symptom | Likely cause |
+|---------|-------------|
+| Target log shows 0 msg/s | Data not reaching target — check source log and network |
+| Target log shows msg/s but SimHub blank | Plugin not enabled (AC) or SimHub not updated (Wreckfest 2) |
+| `[simhub] switched to ...` missing | `[simhub]` config not set, or `SimHubWPF.exe` not found |
+| SimHub shows wrong game overlay | Add game to `[simhub.relay]` so sim-bridge calls `-switchgame` |
 
 ---
 

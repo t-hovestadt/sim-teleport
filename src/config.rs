@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -92,6 +93,10 @@ pub struct SimhubConfig {
     /// SimHub game code for AC/ACE/ACC telemetry.
     #[serde(default = "default_ac_code")]
     pub ac: String,
+    /// Maps sim-relay game IDs to SimHub game codes.
+    /// Example: wreckfest2 = "Wreckfest2"
+    #[serde(default)]
+    pub relay: HashMap<String, String>,
 }
 
 fn default_iracing_code() -> String {
@@ -107,6 +112,7 @@ impl Default for SimhubConfig {
             path: None,
             iracing: default_iracing_code(),
             ac: default_ac_code(),
+            relay: HashMap::new(),
         }
     }
 }

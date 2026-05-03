@@ -4,6 +4,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 type DataCb = Arc<dyn Fn() + Send + Sync>;
+type RelayGameCb = Arc<dyn Fn(&str, bool) + Send + Sync>;
 
 use crate::config::Config;
 use crate::logger::Logger;
@@ -78,13 +79,14 @@ impl TargetApp {
         rx: Receiver<()>,
         on_first_data: Option<DataCb>,
         on_stale: Option<DataCb>,
+        relay_on_game: Option<RelayGameCb>,
     ) -> JoinHandle<()> {
         match self {
             TargetApp::IracingTeleport => {
                 spawn_teleport_target(config, rx, on_first_data, on_stale)
             }
             TargetApp::AcTeleport => spawn_ac_target(config, rx, on_first_data, on_stale),
-            TargetApp::SimRelay => spawn_relay_target(config, rx),
+            TargetApp::SimRelay => spawn_relay_target(config, rx, relay_on_game),
         }
     }
 }
@@ -100,6 +102,7 @@ struct TargetSlot {
     next_restart: Option<Instant>,
     on_first_data: Option<DataCb>,
     on_stale: Option<DataCb>,
+    relay_on_game: Option<RelayGameCb>,
 }
 
 impl TargetSlot {
@@ -108,9 +111,16 @@ impl TargetSlot {
         config: Config,
         on_first_data: Option<DataCb>,
         on_stale: Option<DataCb>,
+        relay_on_game: Option<RelayGameCb>,
     ) -> Self {
         let (tx, rx) = mpsc::channel::<()>();
-        let handle = app.spawn(config.clone(), rx, on_first_data.clone(), on_stale.clone());
+        let handle = app.spawn(
+            config.clone(),
+            rx,
+            on_first_data.clone(),
+            on_stale.clone(),
+            relay_on_game.clone(),
+        );
         Self {
             app,
             handle,
@@ -120,6 +130,7 @@ impl TargetSlot {
             next_restart: None,
             on_first_data,
             on_stale,
+            relay_on_game,
         }
     }
 
@@ -157,6 +168,7 @@ impl TargetSlot {
             rx,
             self.on_first_data.clone(),
             self.on_stale.clone(),
+            self.relay_on_game.clone(),
         );
     }
 
@@ -242,7 +254,11 @@ fn spawn_ac_target(
         .expect("failed to spawn AC Teleport target thread")
 }
 
-fn spawn_relay_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
+fn spawn_relay_target(
+    config: Config,
+    rx: Receiver<()>,
+    on_game_active: Option<RelayGameCb>,
+) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("Sim Relay Target".to_string())
         .spawn(move || {
@@ -254,6 +270,7 @@ fn spawn_relay_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
                     forward_to: None,
                     high_priority: config.apps.high_priority,
                     busy_wait: config.apps.busy_wait,
+                    on_game_active,
                 },
                 rx,
             ) {
@@ -286,8 +303,21 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let p3 = simhub_path.clone();
     let c3 = ac_code.clone();
     let ac_on_first: DataCb = Arc::new(move || t3.try_activate(&c3, p3.as_deref()));
-    let t4 = tracker;
+    let t4 = tracker.clone();
     let ac_on_stale: DataCb = Arc::new(move || t4.deactivate());
+
+    let t5 = tracker;
+    let relay_codes = config.simhub.relay.clone();
+    let simhub_path_relay = simhub_path.clone();
+    let relay_on_game: RelayGameCb = Arc::new(move |id: &str, active: bool| {
+        if active {
+            if let Some(code) = relay_codes.get(id) {
+                t5.try_activate(code, simhub_path_relay.as_deref());
+            }
+        } else {
+            t5.deactivate();
+        }
+    });
 
     if config.apps.iracing_teleport_enabled {
         log.log(&format!(
@@ -299,6 +329,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             config.clone(),
             Some(iracing_on_first),
             Some(iracing_on_stale),
+            None,
         ));
     }
 
@@ -312,6 +343,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             config.clone(),
             Some(ac_on_first),
             Some(ac_on_stale),
+            None,
         ));
     }
 
@@ -322,6 +354,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             config.clone(),
             None,
             None,
+            Some(relay_on_game),
         ));
     }
 

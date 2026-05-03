@@ -319,6 +319,10 @@ struct AppSlot {
     shutdown_tx: Option<Sender<()>>,
     failures: FailureTracker,
     detached: Option<DetachedThread>,
+    /// Consecutive scan cycles where the same game was re-detected during Draining.
+    /// Drain is only cancelled after 3 consecutive hits to filter out process flicker
+    /// (acs.exe briefly reappearing in the process list during AC's shutdown sequence).
+    consecutive_redetections: u32,
 }
 
 impl AppSlot {
@@ -329,6 +333,7 @@ impl AppSlot {
             shutdown_tx: None,
             failures: FailureTracker::new(),
             detached: None,
+            consecutive_redetections: 0,
         }
     }
 
@@ -779,17 +784,23 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                     }
                 }
 
-                // Same game re-detected while draining — cancel shutdown.
+                // Same game re-detected while draining — require 3 consecutive hits before
+                // cancelling. A single blip (acs.exe flickering during shutdown) won't count.
                 (SlotState::Draining { .. }, Some(d)) if draining_game == Some(d.game) => {
-                    log.log(&format!(
-                        "[{}] Game re-detected — cancelling shutdown",
-                        d.label
-                    ));
-                    shmem.cancel_drain();
+                    shmem.consecutive_redetections += 1;
+                    if shmem.consecutive_redetections >= 3 {
+                        log.log(&format!(
+                            "[{}] Game confirmed back ({} scans) — cancelling shutdown",
+                            d.label, shmem.consecutive_redetections
+                        ));
+                        shmem.consecutive_redetections = 0;
+                        shmem.cancel_drain();
+                    }
                 }
 
                 // Different game detected while draining — stop old, start new.
                 (SlotState::Draining { .. }, Some(d)) => {
+                    shmem.consecutive_redetections = 0;
                     let old_name = game_label(shmem.current_game());
                     log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
                     shmem.stop(log);
@@ -806,6 +817,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                 }
 
                 (SlotState::Draining { .. }, None) if drain_expired => {
+                    shmem.consecutive_redetections = 0;
                     let name = game_label(shmem.current_game());
                     log.log(&format!("[{name}] Stopped"));
                     shmem.stop(log);
