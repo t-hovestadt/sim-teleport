@@ -38,9 +38,6 @@ jobs:
             Move-Item $f.src $f.dst
           }
 
-          $assets = ($files | ForEach-Object { $_.dst }) -join "`n"
-          echo "ASSETS=$assets" >> $env:GITHUB_ENV
-
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
