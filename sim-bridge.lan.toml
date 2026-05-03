@@ -1,0 +1,33 @@
+# sim-bridge — LAN setup (zero config)
+# Both PCs on the same network through a router or switch.
+# Rename to sim-bridge.toml and place next to sim-bridge.exe.
+# On the SimHub PC, change mode to "target".
+
+mode = "source"
+
+[network]
+unicast = false
+source_ip = "0.0.0.0"
+target_ip = "0.0.0.0"
+
+[ports]
+iracing_teleport = 5000
+ac_teleport = 5001
+
+[detection]
+scan_interval = 3
+drain_seconds = 20
+
+[apps]
+iracing_teleport_enabled = true
+ac_teleport_enabled = true
+sim_relay_enabled = true
+high_priority = false
+busy_wait = false
+fanalab = false
+
+[advanced]
+stale_timeout_secs = 10
+reconnect_timeout_secs = 10
+ac_poll_rate = 60
+datagram_size = 9000

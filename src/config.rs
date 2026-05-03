@@ -68,13 +68,13 @@ fn default_stale_timeout() -> u64 {
     10
 }
 fn default_reconnect_timeout() -> u64 {
-    5
+    10
 }
 fn default_ac_poll_rate() -> u32 {
     60
 }
 fn default_datagram_size() -> usize {
-    65000
+    9000
 }
 
 impl Default for AdvancedConfig {
@@ -306,7 +306,10 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
         println!();
         println!("Sim Relay forwards UDP to the SimHub PC — enter its IP.");
         println!("(Skip this if you don't use F1, Forza, BeamNG, etc.)");
-        print!("SimHub PC's IP (for Sim Relay): [{}] ", config.network.target_ip);
+        print!(
+            "SimHub PC's IP (for Sim Relay): [{}] ",
+            config.network.target_ip
+        );
         io::stdout().flush()?;
         let input = read_line();
         if !input.is_empty() {

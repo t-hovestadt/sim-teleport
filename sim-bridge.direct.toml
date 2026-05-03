@@ -1,0 +1,37 @@
+# sim-bridge — Direct Ethernet setup
+# Dedicated cable between gaming PC and SimHub PC, no router.
+# Rename to sim-bridge.toml and place next to sim-bridge.exe.
+# Edit source_ip and target_ip to match your static IPs.
+# On the SimHub PC, also set:
+#   mode = "target"
+#   high_priority = true
+#   busy_wait = true
+
+mode = "source"
+
+[network]
+unicast = true
+source_ip = "192.168.50.1"
+target_ip = "192.168.50.2"
+
+[ports]
+iracing_teleport = 5000
+ac_teleport = 5001
+
+[detection]
+scan_interval = 3
+drain_seconds = 20
+
+[apps]
+iracing_teleport_enabled = true
+ac_teleport_enabled = true
+sim_relay_enabled = true
+high_priority = false
+busy_wait = false
+fanalab = false
+
+[advanced]
+stale_timeout_secs = 10
+reconnect_timeout_secs = 10
+ac_poll_rate = 60
+datagram_size = 9000

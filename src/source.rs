@@ -175,7 +175,11 @@ impl AppSlot {
                     } else {
                         // Multicast (LAN default): zero config, no IPs needed.
                         (
-                            format!("{}:{}", teleport::DEFAULT_MULTICAST, cfg.ports.iracing_teleport),
+                            format!(
+                                "{}:{}",
+                                teleport::DEFAULT_MULTICAST,
+                                cfg.ports.iracing_teleport
+                            ),
                             "0.0.0.0:0".to_string(),
                         )
                     };

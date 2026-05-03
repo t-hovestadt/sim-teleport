@@ -15,9 +15,13 @@ Download from the [Releases](../../releases/latest) page:
 | `sim-bridge.exe` | The app — copy to both PCs |
 | `start-source.bat` | Double-click on the gaming PC |
 | `start-target.bat` | Double-click on the SimHub PC |
-| `sim-bridge.example.toml` | Rename to `sim-bridge.toml` and edit your IPs |
+| `sim-bridge.lan.toml` | Config template for LAN (zero config) |
+| `sim-bridge.direct.toml` | Config template for direct ethernet |
 
-Place all files in the same folder on each PC (e.g., `C:\Simracing\`).
+Pick the config matching your setup, rename it to `sim-bridge.toml`, and
+place it next to `sim-bridge.exe` on each PC. For direct ethernet, edit
+the IPs. On the SimHub PC, set `mode = "target"` and optionally
+`high_priority = true` and `busy_wait = true`.
 
 ---
 

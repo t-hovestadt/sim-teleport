@@ -34,39 +34,9 @@ jobs:
           Copy-Item target/x86_64-pc-windows-msvc/release/sim-bridge.exe release/
           Copy-Item start-source.bat release/
           Copy-Item start-target.bat release/
+          Copy-Item sim-bridge.lan.toml release/
+          Copy-Item sim-bridge.direct.toml release/
           Copy-Item README.md release/
-          @"
-          # sim-bridge configuration — edit before first run
-          # Rename this file to sim-bridge.toml and place it next to sim-bridge.exe
-          mode = "source"
-
-          [network]
-          unicast = false
-          source_ip = "192.168.50.1"
-          target_ip = "192.168.50.2"
-
-          [ports]
-          iracing_teleport = 5000
-          ac_teleport = 5001
-
-          [detection]
-          scan_interval = 3
-          drain_seconds = 20
-
-          [apps]
-          iracing_teleport_enabled = true
-          ac_teleport_enabled = true
-          sim_relay_enabled = true
-          high_priority = false
-          busy_wait = false
-          fanalab = false
-
-          [advanced]
-          stale_timeout_secs = 10
-          reconnect_timeout_secs = 5
-          ac_poll_rate = 60
-          datagram_size = 65000
-          "@ | Out-File -Encoding utf8 release/sim-bridge.example.toml
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -75,6 +45,7 @@ jobs:
             release/sim-bridge.exe
             release/start-source.bat
             release/start-target.bat
-            release/sim-bridge.example.toml
+            release/sim-bridge.lan.toml
+            release/sim-bridge.direct.toml
             release/README.md
           generate_release_notes: true
