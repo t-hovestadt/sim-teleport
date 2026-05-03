@@ -13,6 +13,9 @@ pub struct Config {
     pub apps: AppsConfig,
     #[serde(default)]
     pub advanced: AdvancedConfig,
+    /// CLI-only flag — never written to or read from toml.
+    #[serde(skip)]
+    pub verbose: bool,
 }
 
 fn default_mode() -> String {
@@ -92,6 +95,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             mode: "source".to_string(),
+            verbose: false,
             network: NetworkConfig {
                 source_ip: "192.168.50.1".to_string(),
                 target_ip: "192.168.50.2".to_string(),

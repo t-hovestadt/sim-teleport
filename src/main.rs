@@ -69,6 +69,9 @@ enum Cmd {
         /// Grace period after game closes before stopping.
         #[arg(long, value_name = "SECS")]
         drain: Option<u64>,
+        /// Print detailed detection results each scan cycle (probe outcomes, tiebreakers, process matches).
+        #[arg(long)]
+        verbose: bool,
     },
     /// SimHub PC — starts all three telemetry receivers simultaneously.
     Target {
@@ -115,7 +118,11 @@ enum Cmd {
     /// Remove sim-bridge from Windows startup.
     Uninstall,
     /// List all supported games (iRacing, AC family, and all sim-relay UDP games).
-    List,
+    List {
+        /// Include process names and ports for each game.
+        #[arg(long)]
+        verbose: bool,
+    },
     /// Print Windows Firewall rules needed for all configured ports.
     Firewall,
 }
@@ -156,6 +163,7 @@ fn main() {
                     no_relay: false,
                     scan_interval: None,
                     drain: None,
+                    verbose: false,
                 }
             }
         }
@@ -174,6 +182,7 @@ fn main() {
             no_relay,
             scan_interval,
             drain,
+            verbose,
         } => run_source(
             target,
             bind,
@@ -187,6 +196,7 @@ fn main() {
             no_relay,
             scan_interval,
             drain,
+            verbose,
         ),
         Cmd::Target {
             source,
@@ -214,7 +224,7 @@ fn main() {
         Cmd::Setup => run_setup(),
         Cmd::Install { mode } => run_install(mode),
         Cmd::Uninstall => run_uninstall(),
-        Cmd::List => run_list(),
+        Cmd::List { verbose } => run_list(verbose),
         Cmd::Firewall => run_firewall(),
     }
 }
@@ -233,6 +243,7 @@ fn run_source(
     no_relay: bool,
     scan_interval: Option<u64>,
     drain: Option<u64>,
+    verbose: bool,
 ) {
     let log = logger::Logger::open().unwrap_or_else(|e| {
         eprintln!("Warning: could not open log file: {e}");
@@ -280,6 +291,9 @@ fn run_source(
     }
     if let Some(d) = drain {
         cfg.detection.drain_seconds = d;
+    }
+    if verbose {
+        cfg.verbose = true;
     }
 
     let (tx, rx) = mpsc::channel::<()>();
@@ -392,34 +406,67 @@ fn run_uninstall() {
     }
 }
 
-fn run_list() {
+fn run_list(verbose: bool) {
     let cfg = config::try_load().unwrap_or_default();
     println!("sim-bridge — Supported Games");
     println!();
-    println!("Shared Memory (process-detected, auto-started by sim-bridge source):");
-    println!("  {:<35} {:<35} Port", "Game", "Process");
-    println!("  {}", "-".repeat(80));
-    println!(
-        "  {:<35} {:<35} {}",
-        "iRacing", "iRacingSim64DX11.exe", cfg.ports.iracing_teleport
-    );
-    println!(
-        "  {:<35} {:<35} {}",
-        "Assetto Corsa EVO", "AssettoCorsa_EVO.exe", cfg.ports.ac_teleport
-    );
-    println!(
-        "  {:<35} {:<35} {}",
-        "Assetto Corsa", "acs.exe", cfg.ports.ac_teleport
-    );
-    println!(
-        "  {:<35} {:<35} {}",
-        "Assetto Corsa Competizione", "acc.exe", cfg.ports.ac_teleport
-    );
-    println!();
-    println!("UDP Relay (auto-detected by sim-relay, always running on source):");
-    for game in sim_relay::games::GAMES {
-        let port = game.default_port;
-        println!("  {:<35} port {port}", game.name);
+    if verbose {
+        println!("Shared Memory (auto-detected, started by sim-bridge source):");
+        println!("  {:<35} {:<40} Port", "Game", "Detection");
+        println!("  {}", "-".repeat(85));
+        println!(
+            "  {:<35} {:<40} {}",
+            "iRacing", "Named event: IRSDKDataValidEvent", cfg.ports.iracing_teleport
+        );
+        println!(
+            "  {:<35} {:<40} {}",
+            "Assetto Corsa EVO", "Shmem probe: acevo_pmf_physics", cfg.ports.ac_teleport
+        );
+        println!(
+            "  {:<35} {:<40} {}",
+            "Assetto Corsa", "Shmem probe: acpmf_physics", cfg.ports.ac_teleport
+        );
+        println!(
+            "  {:<35} {:<40} {}",
+            "Assetto Corsa Competizione",
+            "Shmem probe: acpmf_physics + acc.exe",
+            cfg.ports.ac_teleport
+        );
+        println!();
+        println!("UDP Relay (process scan, started on demand):");
+        println!("  {:<35} {:<8} Process names", "Game", "Port");
+        println!("  {}", "-".repeat(85));
+        for game in sim_relay::games::GAMES {
+            let port = game.default_port;
+            let names = game.process_names.join(", ");
+            println!("  {:<35} {:<8} {}", game.name, port, names);
+        }
+    } else {
+        println!("Shared Memory (auto-detected, started by sim-bridge source):");
+        println!("  {:<35} {:<35} Port", "Game", "Process");
+        println!("  {}", "-".repeat(80));
+        println!(
+            "  {:<35} {:<35} {}",
+            "iRacing", "iRacingSim64DX11.exe", cfg.ports.iracing_teleport
+        );
+        println!(
+            "  {:<35} {:<35} {}",
+            "Assetto Corsa EVO", "AssettoCorsa_EVO.exe", cfg.ports.ac_teleport
+        );
+        println!(
+            "  {:<35} {:<35} {}",
+            "Assetto Corsa", "acs.exe", cfg.ports.ac_teleport
+        );
+        println!(
+            "  {:<35} {:<35} {}",
+            "Assetto Corsa Competizione", "acc.exe", cfg.ports.ac_teleport
+        );
+        println!();
+        println!("UDP Relay (process scan, started on demand):");
+        for game in sim_relay::games::GAMES {
+            let port = game.default_port;
+            println!("  {:<35} port {port}", game.name);
+        }
     }
 }
 

@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use crate::logger::Logger;
+
 /// Snapshot of running process names, built once per scan cycle.
 /// All names are stored lowercased for case-insensitive matching.
 pub struct ProcessScanner {
@@ -33,6 +35,10 @@ impl ProcessScanner {
         names
             .iter()
             .any(|n| self.snapshot.contains(&n.to_lowercase()))
+    }
+
+    pub fn process_count(&self) -> usize {
+        self.snapshot.len()
     }
 
     #[cfg(windows)]
@@ -75,7 +81,7 @@ impl ProcessScanner {
 /// The event only exists while iRacing is running — no stale state possible.
 /// One syscall, ~1 µs, definitive answer.
 #[cfg(windows)]
-pub fn probe_iracing_event() -> bool {
+pub fn probe_iracing_event(verbose: bool, log: &Logger) -> bool {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::OpenEventW;
 
@@ -84,18 +90,30 @@ pub fn probe_iracing_event() -> bool {
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
-    unsafe {
+    let found = unsafe {
         let handle = OpenEventW(SYNCHRONIZE, 0, name.as_ptr());
         if handle == 0 {
-            return false;
+            false
+        } else {
+            CloseHandle(handle);
+            true
         }
-        CloseHandle(handle);
-        true
+    };
+    if verbose {
+        log.log(if found {
+            "[scan] iRacing event: FOUND"
+        } else {
+            "[scan] iRacing event: not found"
+        });
     }
+    found
 }
 
 #[cfg(not(windows))]
-pub fn probe_iracing_event() -> bool {
+pub fn probe_iracing_event(verbose: bool, log: &Logger) -> bool {
+    if verbose {
+        log.log("[scan] iRacing event: not found");
+    }
     false
 }
 
@@ -118,15 +136,44 @@ pub struct AcProbeResult {
 /// sleeps 100 ms, reads again at T1, then closes the handle.
 /// Returns `Live` if packetId changed, `Stale` if maps exist but packetId is static,
 /// `None` if maps don't exist.
-pub fn probe_ac_maps() -> AcProbeResult {
+pub fn probe_ac_maps(verbose: bool, log: &Logger) -> AcProbeResult {
+    let evo_raw = probe_map("Local\\acevo_pmf_physics");
+    let ac1_raw = probe_map("Local\\acpmf_physics");
+
+    if verbose {
+        match evo_raw {
+            Some((ShmemDetection::Live, id0, id1)) => {
+                log.log(&format!("[scan] AC EVO maps: found (LIVE, packetId {id0} → {id1})"));
+            }
+            Some((ShmemDetection::Stale, id0, _)) => {
+                log.log(&format!(
+                    "[scan] AC EVO maps: found (stale, packetId={id0} unchanged)"
+                ));
+            }
+            None => log.log("[scan] AC EVO maps: not found"),
+        }
+        match ac1_raw {
+            Some((ShmemDetection::Live, id0, id1)) => {
+                log.log(&format!("[scan] AC1 maps: found (LIVE, packetId {id0} → {id1})"));
+            }
+            Some((ShmemDetection::Stale, id0, _)) => {
+                log.log(&format!(
+                    "[scan] AC1 maps: found (stale, packetId={id0} unchanged)"
+                ));
+            }
+            None => log.log("[scan] AC1 maps: not found"),
+        }
+    }
+
     AcProbeResult {
-        ac_evo: probe_map("Local\\acevo_pmf_physics"),
-        ac1: probe_map("Local\\acpmf_physics"),
+        ac_evo: evo_raw.map(|(d, _, _)| d),
+        ac1: ac1_raw.map(|(d, _, _)| d),
     }
 }
 
+/// Returns `(detection, id0, id1)` so the caller can log exact packetId values.
 #[cfg(windows)]
-fn probe_map(name: &str) -> Option<ShmemDetection> {
+fn probe_map(name: &str) -> Option<(ShmemDetection, i32, i32)> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Memory::{
         MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP_READ,
@@ -154,13 +201,13 @@ fn probe_map(name: &str) -> Option<ShmemDetection> {
     }
 
     if id1 != id0 {
-        Some(ShmemDetection::Live)
+        Some((ShmemDetection::Live, id0, id1))
     } else {
-        Some(ShmemDetection::Stale)
+        Some((ShmemDetection::Stale, id0, id1))
     }
 }
 
 #[cfg(not(windows))]
-fn probe_map(_name: &str) -> Option<ShmemDetection> {
+fn probe_map(_name: &str) -> Option<(ShmemDetection, i32, i32)> {
     None
 }
