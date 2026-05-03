@@ -114,7 +114,7 @@ protocol on port 9000.
 | `--busy-wait` | ✓ | ✓ | off | Spin instead of sleeping; eliminates OS scheduler wake-up jitter (~0–2 ms), costs one CPU core |
 | `--poll-rate <HZ>` | ✓ | | `60` | Page polling rate in Hz |
 | `--pin-core <N>` | ✓ | ✓ | off | Pin the worker thread to CPU core N (0-based) |
-| `--stale-timeout <SECS>` | | ✓ | `10` | Seconds without data before closing the shared memory maps (single-game mode only) |
+| `--stale-timeout <SECS>` | | ✓ | `10` | Seconds without data before action: drop maps (single-game mode) or zero game status (dual mode) |
 | `--high-priority` | ✓ | ✓ | off | Raise to HIGH_PRIORITY_CLASS + ABOVE_NORMAL thread priority. Safe on the SimHub PC; on the game PC only use if the game is not running on the same machine |
 
 ---
@@ -280,7 +280,7 @@ re-enters the detection loop. The next game to start (same or different) is dete
 
 ### Dual maps on target
 
-Target creates 12 named regions at startup (6 maps × 2 games), each 64 KB. Every incoming
+Target creates 6 named regions at startup (3 maps × 2 games), each 64 KB. Every incoming
 page is written to both EVO and AC1 maps. When the source is forwarding EVO data, the EVO
 maps contain live telemetry and the AC1 maps contain whatever was last written (usually
 stale or zero). SimHub reads the set for its configured game; the other set is ignored.

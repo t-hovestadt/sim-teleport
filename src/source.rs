@@ -107,7 +107,6 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
         let mut next_tick = Instant::now();
 
         let ActiveMaps { game, maps } = active;
-        let maps = maps;
 
         loop {
             if shutdown.try_recv().is_ok() {
