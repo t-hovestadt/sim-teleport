@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::game::{self, GameConfig};
-use crate::maps::{MapError, SharedMap};
+use crate::maps::{zero_named_map, MapError, SharedMap};
 use crate::platform::{boost_thread_priority, pin_thread_to_core, set_high_priority, HighResTimer};
 use crate::protocol::{Sender, PAGE_GRAPHICS, PAGE_HEARTBEAT, PAGE_PHYSICS, PAGE_STATIC};
 use crate::stats::Stats;
@@ -113,6 +113,16 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
         loop {
             if shutdown.try_recv().is_ok() {
+                // FanaLab workaround: zero shared memory on game exit so FanaLab
+                // reads RPM=0 and sends LED-off command to the wheel base firmware.
+                // Without this, FanaLab reads stale RPM data and LEDs stay lit
+                // indefinitely until the base is power cycled or a new session starts.
+                // See: https://forum.fanatec.com/topic/19449
+                eprintln!("[AC Teleport] Zeroing shared memory (FanaLab cleanup)");
+                zero_named_map(game.physics_map);
+                zero_named_map(game.graphics_map);
+                zero_named_map(game.static_map);
+                std::thread::sleep(std::time::Duration::from_millis(200));
                 stats.print_summary();
                 return Ok(());
             }
@@ -215,6 +225,16 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
             // Managed mode skips this — sim-bridge sends a shutdown signal on game exit,
             // so packetId being 0 just means the game is on the menu, not that it's gone.
             if args.game.is_none() && last_nonzero_tick.elapsed() >= RECONNECT_INTERVAL {
+                // FanaLab workaround: zero shared memory on game exit so FanaLab
+                // reads RPM=0 and sends LED-off command to the wheel base firmware.
+                // Without this, FanaLab reads stale RPM data and LEDs stay lit
+                // indefinitely until the base is power cycled or a new session starts.
+                // See: https://forum.fanatec.com/topic/19449
+                eprintln!("[AC Teleport] Zeroing shared memory (FanaLab cleanup)");
+                zero_named_map(game.physics_map);
+                zero_named_map(game.graphics_map);
+                zero_named_map(game.static_map);
+                std::thread::sleep(std::time::Duration::from_millis(200));
                 drop(maps);
                 match try_open_maps(game) {
                     Ok(new_maps) => {

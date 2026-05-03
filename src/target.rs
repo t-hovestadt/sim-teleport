@@ -57,11 +57,10 @@ impl GameMapSet {
         map.as_slice_mut()[..copy_len].copy_from_slice(&data[..copy_len]);
     }
 
-    /// Zero AC_STATUS (i32 at offset 4 in the graphics page) to signal no active session.
-    fn zero_status(&mut self) {
-        let gfx = self.maps[1].as_slice_mut();
-        if gfx.len() >= 8 {
-            gfx[4..8].fill(0);
+    /// Zero all three map pages so FanaLab reads RPM=0 and resets wheel LEDs.
+    fn zero_all(&mut self) {
+        for map in self.maps.iter_mut() {
+            map.as_slice_mut().fill(0);
         }
     }
 
@@ -89,12 +88,12 @@ impl MapMode {
         }
     }
 
-    fn zero_status(&mut self) {
+    fn zero_all_pages(&mut self) {
         match self {
-            Self::Single(set) => set.zero_status(),
+            Self::Single(set) => set.zero_all(),
             Self::Dual { evo, ac1 } => {
-                evo.zero_status();
-                ac1.zero_status();
+                evo.zero_all();
+                ac1.zero_all();
             }
         }
     }
@@ -297,6 +296,12 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                     || e.kind() == std::io::ErrorKind::TimedOut =>
             {
                 if last_update.elapsed() >= args.stale_timeout {
+                    // FanaLab workaround: zero all map data so FanaLab reads RPM=0
+                    // and resets wheel base LEDs. Without this, stale RPM keeps LEDs lit.
+                    // See: https://forum.fanatec.com/topic/19449
+                    if let Some(mode) = maps.as_mut() {
+                        mode.zero_all_pages();
+                    }
                     match maps.as_mut() {
                         None => {}
                         Some(MapMode::Single(_)) => {
@@ -310,9 +315,8 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                                 cb();
                             }
                         }
-                        Some(mode @ MapMode::Dual { .. }) => {
-                            // Dual mode: keep maps alive but signal no active session.
-                            mode.zero_status();
+                        Some(MapMode::Dual { .. }) => {
+                            // Dual mode: keep maps alive (already zeroed above).
                             first_frame_logged = false;
                             if let Some(cb) = &args.on_stale {
                                 cb();

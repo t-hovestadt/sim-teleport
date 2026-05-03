@@ -23,9 +23,13 @@ impl std::error::Error for MapError {}
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
+pub use windows::zero_named_map;
+#[cfg(windows)]
 pub use windows::WindowsSharedMap as SharedMap;
 
 #[cfg(not(windows))]
 mod mock;
 #[cfg(not(windows))]
 pub use mock::MockSharedMap as SharedMap;
+#[cfg(not(windows))]
+pub fn zero_named_map(_name: &str) {}

@@ -8,7 +8,7 @@ use windows_sys::Win32::{
     },
     System::Memory::{
         CreateFileMappingW, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP_ALL_ACCESS,
-        FILE_MAP_READ, MEMORY_MAPPED_VIEW_ADDRESS, PAGE_READWRITE,
+        FILE_MAP_READ, FILE_MAP_WRITE, MEMORY_MAPPED_VIEW_ADDRESS, PAGE_READWRITE,
     },
 };
 
@@ -133,6 +133,36 @@ impl WindowsSharedMap {
 
     pub fn size(&self) -> usize {
         self.size
+    }
+}
+
+/// Zero a named shared memory map via a temporary write handle.
+///
+/// FanaLab workaround: zero shared memory on game exit so FanaLab reads RPM=0
+/// and sends LED-off to the wheel base firmware. Without this, FanaLab reads
+/// stale RPM data and LEDs stay lit indefinitely.
+/// See: https://forum.fanatec.com/topic/19449
+///
+/// Call for each map name (physics, graphics, static) BEFORE dropping the
+/// read handles — our handles keep the map alive for FanaLab to read the
+/// zeroed data before we release them.
+pub fn zero_named_map(name: &str) {
+    unsafe {
+        let h_map = OpenFileMappingW(FILE_MAP_WRITE, 0, wide(name).as_ptr());
+        if h_map == 0 || h_map == INVALID_HANDLE_VALUE {
+            return;
+        }
+        let view = MapViewOfFile(h_map, FILE_MAP_WRITE, 0, 0, 0);
+        if view.Value.is_null() {
+            CloseHandle(h_map);
+            return;
+        }
+        let size = query_region_size(view.Value as *const u8).unwrap_or(0);
+        if size > 0 {
+            std::ptr::write_bytes(view.Value as *mut u8, 0, size);
+        }
+        UnmapViewOfFile(view);
+        CloseHandle(h_map);
     }
 }
 
