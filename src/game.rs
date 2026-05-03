@@ -1,3 +1,5 @@
+use crate::maps::SharedMap;
+
 /// Per-game shared memory configuration.
 ///
 /// The `max_*_size` fields are upper bounds for pre-allocating LZ4 buffers.
@@ -52,11 +54,57 @@ pub const EVO: GameConfig = GameConfig {
     max_static_size: 4096,
 };
 
+/// Detection priority: EVO first (newer game), then AC1.
+pub const DETECTION_ORDER: &[&GameConfig] = &[&EVO, &AC1];
+
 /// Resolve a game id string ("ac1" or "evo") to its config.
 pub fn resolve(id: &str) -> Option<&'static GameConfig> {
     match id {
         "ac1" => Some(&AC1),
         "evo" => Some(&EVO),
         _ => None,
+    }
+}
+
+/// Probe shared memory to find the first running game in detection order (EVO → AC1).
+/// Test handles are opened and immediately dropped — no persistent handles are held.
+/// Returns `None` when neither game's maps are available.
+pub fn detect() -> Option<&'static GameConfig> {
+    DETECTION_ORDER.iter().copied().find(|&game| probe(game))
+}
+
+/// Open test handles to all three maps for `game` and immediately drop them.
+/// Returns `true` if all three maps exist (game is running or recently was).
+fn probe(game: &GameConfig) -> bool {
+    // Each `.is_ok()` call drops the `Ok(SharedMap)` immediately, closing the handle.
+    // We must not hold handles open while waiting — a held handle keeps the mapping
+    // alive after the game exits, making stale data look like a running game.
+    SharedMap::open(game.physics_map).is_ok()
+        && SharedMap::open(game.graphics_map).is_ok()
+        && SharedMap::open(game.static_map).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detection_order_is_evo_first() {
+        assert_eq!(DETECTION_ORDER[0].id, "evo");
+        assert_eq!(DETECTION_ORDER[1].id, "ac1");
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn detect_returns_none_on_non_windows() {
+        // MockSharedMap::open always returns Err, so detect() always returns None.
+        assert!(detect().is_none());
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn probe_returns_false_on_non_windows() {
+        assert!(!probe(&AC1));
+        assert!(!probe(&EVO));
     }
 }

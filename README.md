@@ -32,25 +32,24 @@ Pre-built Windows x64 binaries are on the [Releases](../../releases/latest) page
 
 1. Run on your **SimHub PC**:
    ```
-   ac-teleport.exe target --game ac1
+   ac-teleport.exe target
    ```
 2. Run on your **Game PC**:
    ```
-   ac-teleport.exe source --game ac1
+   ac-teleport.exe source
    ```
 
-Start them in any order. source waits for the game to launch; target waits for data.
-
-Replace `--game ac1` with `--game evo` for Assetto Corsa EVO. Everything else is identical.
+Start them in any order. source auto-detects which game is running; target creates maps for both
+games simultaneously. Launch AC1 or AC EVO — ac-teleport picks it up automatically.
 
 **Unicast (if multicast doesn't work on your network):**
 
 ```
 # SimHub PC
-ac-teleport.exe target --game ac1 --unicast
+ac-teleport.exe target --unicast
 
 # Game PC (replace with your SimHub machine's IP)
-ac-teleport.exe source --game ac1 --unicast --target 192.168.1.50:5001
+ac-teleport.exe source --unicast --target 192.168.1.50:5001
 ```
 
 **Direct Ethernet (point-to-point cable between the two PCs):**
@@ -59,16 +58,43 @@ See the [Direct Ethernet setup](#direct-ethernet-setup) section below.
 
 ---
 
+## Game detection
+
+ac-teleport automatically detects which Assetto Corsa game is running. No `--game` flag needed.
+
+**How it works on source:** Every 2 seconds, source probes the shared memory names for EVO, then
+AC1. It checks by attempting to open each map handle and immediately closing it — no handles
+are held while waiting, so maps don't persist after a game exits. When all three maps for a
+game are found, source opens them for real and starts forwarding.
+
+**Detection order:** EVO is checked before AC1. If both are running simultaneously (unlikely),
+EVO wins. Use `--game ac1` or `--game evo` to force a specific game.
+
+**Game switching:** If you close AC EVO and launch AC1 (or vice versa) without restarting
+ac-teleport, it handles this automatically:
+1. Source detects EVO's packetIds stopped advancing (game closed)
+2. Source drops EVO handles, returns to detection loop
+3. Source detects AC1 maps, connects, resumes forwarding
+
+**How it works on target:** Target creates shared memory maps for **both** EVO and AC1 at startup
+(six maps total). Every incoming page is written to both sets. SimHub reads the set matching
+the game it is configured for — the other set just sits idle. No protocol changes are needed.
+
+**ACC note:** Assetto Corsa Competizione (ACC) uses the same shared memory names as AC1
+(`Local\acpmf_*`). Source will detect and forward ACC single-player telemetry. This is
+unofficial / experimental — ACC's primary telemetry interface is its own UDP broadcasting
+protocol on port 9000.
+
+---
+
 ## Supported games
 
-| Flag | Game | Process | Shared memory prefix |
-|------|------|---------|----------------------|
-| `--game ac1` | Assetto Corsa | `acs.exe` | `Local\acpmf_*` |
-| `--game evo` | Assetto Corsa EVO | `AssettoCorsaEVO.exe` | `Local\acevo_pmf_*` |
+| Flag | Game | Shared memory prefix |
+|------|------|----------------------|
+| `--game ac1` | Assetto Corsa | `Local\acpmf_*` |
+| `--game evo` | Assetto Corsa EVO | `Local\acevo_pmf_*` |
+| *(default)* | Auto-detect | Both sets created on target |
 
-> **Assetto Corsa Competizione (ACC)** is not supported — ACC uses a separate broadcasting
-> UDP protocol on port 9000 and does not share memory in this format.
->
 > **For iRacing**, use [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) instead — it streams iRacing's single
 > shared memory region, which has a completely different structure.
 
@@ -78,7 +104,7 @@ See the [Direct Ethernet setup](#direct-ethernet-setup) section below.
 
 | Flag | source | target | Default | Description |
 |------|:------:|:------:|---------|-------------|
-| `--game <ac1\|evo>` | ✓ | ✓ | *(required)* | Game to relay / mirror |
+| `--game <ac1\|evo>` | ✓ | ✓ | *(auto-detect)* | Force a specific game; omit for auto-detect |
 | `--bind <ADDR>` | ✓ | ✓ | `0.0.0.0:0` / `0.0.0.0:5001` | Local address to bind the UDP socket to |
 | `--target <ADDR>` | ✓ | | `239.255.0.1:5001` | Destination (multicast group:port or unicast IP:port) |
 | `--unicast` | ✓ | ✓ | off | Send/receive directly host-to-host instead of multicast |
@@ -86,15 +112,15 @@ See the [Direct Ethernet setup](#direct-ethernet-setup) section below.
 | `--busy-wait` | ✓ | ✓ | off | Spin instead of sleeping; eliminates OS scheduler wake-up jitter (~0–2 ms), costs one CPU core |
 | `--poll-rate <HZ>` | ✓ | | `60` | Page polling rate in Hz |
 | `--pin-core <N>` | ✓ | ✓ | off | Pin the worker thread to CPU core N (0-based) |
-| `--stale-timeout <SECS>` | | ✓ | `10` | Seconds without data before closing the shared memory maps |
+| `--stale-timeout <SECS>` | | ✓ | `10` | Seconds without data before closing the shared memory maps (single-game mode only) |
 | `--high-priority` | ✓ | ✓ | off | Raise to HIGH_PRIORITY_CLASS + ABOVE_NORMAL thread priority. Safe on the SimHub PC; on the game PC only use if the game is not running on the same machine |
 
 ---
 
 ## How it works
 
-- **source** polls three named shared-memory pages at `--poll-rate` Hz. Each page has a `packetId` counter at offset 0; when it changes, source compresses that page with LZ4 and sends it over UDP. It waits indefinitely for the game to start and reconnects automatically if the game closes.
-- **target** receives the UDP stream, reassembles fragments, decompresses, and writes the data into matching shared-memory pages on the SimHub PC — so SimHub sees the game as if it were installed locally. Maps are created on first data arrival and closed cleanly after `--stale-timeout` seconds with no data.
+- **source** polls three named shared-memory pages at `--poll-rate` Hz. Each page has a `packetId` counter at offset 0; when it changes, source compresses that page with LZ4 and sends it over UDP. In auto-detect mode source probes for EVO then AC1 maps every 2 s until one is found. It reconnects automatically if the game closes and re-detects whichever game starts next.
+- **target** receives the UDP stream, reassembles fragments, decompresses, and writes the data into matching shared-memory pages on the SimHub PC — so SimHub sees the game as if it were installed locally. In dual-map mode (default) maps for both games are created at startup and data is written to both sets simultaneously.
 - **Heartbeats** keep the connection alive across menus and loading screens so SimHub doesn't disconnect.
 
 Both tools print a stats line every 5 s and a summary on Ctrl-C:
@@ -173,10 +199,8 @@ Setting names vary by NIC manufacturer — look for equivalents if the exact nam
 
 Use the provided bat files (edit the paths to match where you placed `ac-teleport.exe`):
 
-- `start-source-ac1.bat` — Game PC, AC1
-- `start-target-ac1.bat` — SimHub PC, AC1
-- `start-source-evo.bat` — Game PC, Assetto Corsa EVO
-- `start-target-evo.bat` — SimHub PC, Assetto Corsa EVO
+- `start-source.bat` — Game PC (auto-detects AC1 or AC EVO)
+- `start-target.bat` — SimHub PC (creates maps for both games)
 
 **Troubleshooting**
 
@@ -231,6 +255,9 @@ carries a 24-byte header:
 
 The receiver reassembles fragments out-of-order and discards duplicates. A new sequence discards any in-progress assembly from the previous one.
 
+There is no game-type field in the protocol. The target writes every incoming page into both
+EVO and AC1 maps. This keeps the wire format stable regardless of which game is running.
+
 ### Page polling
 
 Source reads `packetId` (i32 at byte offset 0) from each page every tick. A page is only
@@ -238,16 +265,33 @@ compressed and sent when its `packetId` changes. Physics updates at ~333 Hz and 
 ~60 Hz; both are captured at the configured `--poll-rate`. Static data is resent every 10 s
 as a fallback in addition to change detection.
 
+### Auto-detection
+
+Source calls `detect()` every 2 s while waiting. Detection opens test handles to all three
+maps for EVO, then AC1, and immediately closes them. Only after successful detection are
+persistent map handles opened. This prevents stale handles from keeping maps alive after
+a game exits.
+
+After a game disconnects (all packetIds at zero for 5 s), source drops its map handles and
+re-enters the detection loop. The next game to start (same or different) is detected within
+2 s and forwarding resumes with fresh compression buffers sized for that game.
+
+### Dual maps on target
+
+Target creates 12 named regions at startup (6 maps × 2 games), each 64 KB. Every incoming
+page is written to both EVO and AC1 maps. When the source is forwarding EVO data, the EVO
+maps contain live telemetry and the AC1 maps contain whatever was last written (usually
+stale or zero). SimHub reads the set for its configured game; the other set is ignored.
+
+On stale timeout (no data for `--stale-timeout` seconds), target zeroes `AC_STATUS` (offset 4
+in the graphics map) in both map sets. This tells SimHub there is no active session without
+destroying the maps.
+
 ### Heartbeats
 
 When `AC_STATUS` (graphics page, offset 4) is 0 (AC_OFF — menus, loading screens), source
 sends a header-only heartbeat datagram every 1 s. Target resets its stale timer on receipt
 without decompressing, keeping the shared maps alive between sessions.
-
-### Reconnect detection
-
-Source tracks the last time any `packetId` was nonzero. If all three pages stay at zero for
-5 s (the game has likely closed), source drops the maps and re-enters the wait loop.
 
 ### Performance design
 

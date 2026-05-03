@@ -5,14 +5,17 @@ use std::time::Duration;
 
 /// Receive AC1 or ACE telemetry and expose it as local shared memory for SimHub.
 ///
-/// Same as `ac-teleport target` but without the subcommand — pass --game and
-/// any options directly: `target.exe --game ac1`
+/// Same as `ac-teleport target` but without the subcommand — pass options
+/// directly: `target.exe`
+///
+/// Without --game, creates maps for both EVO and AC1 simultaneously so SimHub
+/// finds whichever game is active.
 #[derive(Parser)]
 #[command(name = "target", version, about)]
 struct Args {
-    /// Game to mirror: "ac1" for Assetto Corsa, "evo" for Assetto Corsa EVO.
+    /// Game override: "ac1" or "evo". Default: create maps for both games.
     #[arg(long)]
-    game: String,
+    game: Option<String>,
 
     /// Address and port to listen on.
     #[arg(long, default_value = "0.0.0.0:5001")]
@@ -47,12 +50,15 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let game_cfg = match game::resolve(&args.game) {
-        Some(g) => g,
-        None => {
-            eprintln!("Unknown game '{}'. Valid options: ac1, evo", args.game);
-            std::process::exit(1);
-        }
+    let game_cfg = match args.game.as_deref() {
+        Some(id) => match game::resolve(id) {
+            Some(g) => Some(g),
+            None => {
+                eprintln!("Unknown game '{id}'. Valid options: ac1, evo");
+                std::process::exit(1);
+            }
+        },
+        None => None,
     };
 
     let (tx, rx) = mpsc::channel::<()>();
@@ -68,11 +74,14 @@ fn main() {
         args.group.as_str()
     };
     let mode = if args.unicast { "unicast" } else { "multicast" };
-    println!("{} target ← {dest} ({mode})", game_cfg.name);
+    match game_cfg {
+        Some(g) => println!("{} target ← {dest} ({mode})", g.name),
+        None => println!("AC Teleport target ← {dest} ({mode}) [dual-map: EVO + AC1]"),
+    }
 
     if let Err(e) = target::run(
-        game_cfg,
         target::TargetArgs {
+            game: game_cfg,
             bind: args.bind,
             group: args.group,
             unicast: args.unicast,

@@ -4,14 +4,16 @@ use std::sync::mpsc;
 
 /// Read AC1 or ACE telemetry from shared memory and broadcast it over UDP.
 ///
-/// Same as `ac-teleport source` but without the subcommand — pass --game and
-/// any options directly: `source.exe --game ac1`
+/// Same as `ac-teleport source` but without the subcommand — pass options
+/// directly: `source.exe --target 192.168.50.2:5001`
+///
+/// Auto-detects which game is running (EVO → AC1 priority). Use --game to force one.
 #[derive(Parser)]
 #[command(name = "source", version, about)]
 struct Args {
-    /// Game to relay: "ac1" for Assetto Corsa, "evo" for Assetto Corsa EVO.
+    /// Game override: "ac1" or "evo". Default: auto-detect (EVO → AC1 priority).
     #[arg(long)]
-    game: String,
+    game: Option<String>,
 
     /// Destination — multicast group:port, or unicast target address.
     #[arg(long, default_value = "239.255.0.1:5001")]
@@ -46,12 +48,15 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let game_cfg = match game::resolve(&args.game) {
-        Some(g) => g,
-        None => {
-            eprintln!("Unknown game '{}'. Valid options: ac1, evo", args.game);
-            std::process::exit(1);
-        }
+    let game_cfg = match args.game.as_deref() {
+        Some(id) => match game::resolve(id) {
+            Some(g) => Some(g),
+            None => {
+                eprintln!("Unknown game '{id}'. Valid options: ac1, evo");
+                std::process::exit(1);
+            }
+        },
+        None => None,
     };
 
     let (tx, rx) = mpsc::channel::<()>();
@@ -62,11 +67,17 @@ fn main() {
     .expect("failed to install Ctrl-C handler");
 
     let mode = if args.unicast { "unicast" } else { "multicast" };
-    println!("{} source → {} ({mode})", game_cfg.name, args.target);
+    match game_cfg {
+        Some(g) => println!("{} source → {} ({mode})", g.name, args.target),
+        None => println!(
+            "AC Teleport source → {} ({mode}) [auto-detect]",
+            args.target
+        ),
+    }
 
     if let Err(e) = source::run(
-        game_cfg,
         source::SourceArgs {
+            game: game_cfg,
             target: args.target,
             bind: args.bind,
             unicast: args.unicast,

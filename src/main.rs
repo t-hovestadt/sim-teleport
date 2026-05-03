@@ -8,6 +8,9 @@ const DEFAULT_PORT: u16 = 5001;
 
 /// Stream Assetto Corsa (AC1) or Assetto Corsa EVO telemetry over the network
 /// so SimHub can run on a different machine than your game PC.
+///
+/// Both source and target auto-detect which game is running. The --game flag
+/// is only needed when you want to force a specific game.
 #[derive(Parser)]
 #[command(name = "ac-teleport", version, about)]
 struct Cli {
@@ -18,10 +21,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Read game telemetry from shared memory and broadcast it over UDP.
+    ///
+    /// Automatically detects Assetto Corsa EVO or AC1. Use --game to force one.
     Source {
-        /// Game to relay: "ac1" for Assetto Corsa, "evo" for Assetto Corsa EVO.
+        /// Game override: "ac1" or "evo". Default: auto-detect (EVO → AC1 priority).
         #[arg(long)]
-        game: String,
+        game: Option<String>,
 
         /// Destination — multicast group:port, or unicast target address.
         #[arg(long, default_value_t = format!("{DEFAULT_MULTICAST}:{DEFAULT_PORT}"))]
@@ -54,10 +59,13 @@ enum Command {
     },
 
     /// Receive telemetry and expose it as local shared memory for SimHub.
+    ///
+    /// Without --game, creates maps for both EVO and AC1 simultaneously so
+    /// SimHub finds whichever game is active.
     Target {
-        /// Game to mirror: "ac1" for Assetto Corsa, "evo" for Assetto Corsa EVO.
+        /// Game override: "ac1" or "evo". Default: create maps for both games.
         #[arg(long)]
-        game: String,
+        game: Option<String>,
 
         /// Address and port to listen on.
         #[arg(long, default_value_t = format!("0.0.0.0:{DEFAULT_PORT}"))]
@@ -111,12 +119,15 @@ fn main() {
             high_priority,
             poll_rate,
         } => {
-            let game_cfg = resolve_game(&game_id);
+            let game_cfg = game_id.as_deref().map(resolve_game);
             let mode = if unicast { "unicast" } else { "multicast" };
-            println!("{} source → {target} ({mode})", game_cfg.name);
+            match game_cfg {
+                Some(g) => println!("{} source → {target} ({mode})", g.name),
+                None => println!("AC Teleport source → {target} ({mode}) [auto-detect]"),
+            }
             source::run(
-                game_cfg,
                 source::SourceArgs {
+                    game: game_cfg,
                     target,
                     bind,
                     unicast,
@@ -139,13 +150,16 @@ fn main() {
             high_priority,
             stale_timeout,
         } => {
-            let game_cfg = resolve_game(&game_id);
+            let game_cfg = game_id.as_deref().map(resolve_game);
             let dest = if unicast { "unicast" } else { group.as_str() };
             let mode = if unicast { "unicast" } else { "multicast" };
-            println!("{} target ← {dest} ({mode})", game_cfg.name);
+            match game_cfg {
+                Some(g) => println!("{} target ← {dest} ({mode})", g.name),
+                None => println!("AC Teleport target ← {dest} ({mode}) [dual-map: EVO + AC1]"),
+            }
             target::run(
-                game_cfg,
                 target::TargetArgs {
+                    game: game_cfg,
                     bind,
                     group,
                     unicast,

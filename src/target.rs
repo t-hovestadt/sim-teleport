@@ -4,7 +4,7 @@ use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crate::game::GameConfig;
+use crate::game::{self, GameConfig};
 use crate::maps::{MapError, SharedMap};
 use crate::platform::{
     boost_thread_priority, pin_thread_to_core, set_high_priority, HighResTimer, MmcssGuard,
@@ -12,7 +12,14 @@ use crate::platform::{
 use crate::protocol::{Receiver as ProtoReceiver, MAX_DATAGRAM_SIZE, PAGE_HEARTBEAT};
 use crate::stats::Stats;
 
+/// Target maps created at this size for each page regardless of the actual game struct size.
+/// 64 KB is generous for both current games and any future struct growth.
+const DUAL_MAP_SIZE: usize = 65536;
+
 pub struct TargetArgs {
+    /// `None` = dual mode (creates maps for both EVO and AC1 simultaneously).
+    /// `Some(cfg)` = single-game mode (creates only that game's 3 maps, lazily).
+    pub game: Option<&'static GameConfig>,
     pub bind: String,
     pub group: String,
     pub unicast: bool,
@@ -22,11 +29,85 @@ pub struct TargetArgs {
     pub stale_timeout: Duration,
 }
 
-pub fn run(
-    game: &'static GameConfig,
-    args: TargetArgs,
-    shutdown: mpsc::Receiver<()>,
-) -> std::io::Result<()> {
+// ── Map abstractions ──────────────────────────────────────────────────────────
+
+/// One game's three shared memory maps.
+struct GameMapSet {
+    maps: [SharedMap; 3],
+}
+
+impl GameMapSet {
+    fn create(game: &GameConfig, size: usize) -> Result<Self, MapError> {
+        let maps = [
+            SharedMap::create(game.physics_map, size)?,
+            SharedMap::create(game.graphics_map, size)?,
+            SharedMap::create(game.static_map, size)?,
+        ];
+        Ok(Self { maps })
+    }
+
+    fn write_page(&mut self, page_idx: usize, data: &[u8]) {
+        if page_idx >= self.maps.len() {
+            return;
+        }
+        let map = &mut self.maps[page_idx];
+        let copy_len = data.len().min(map.size());
+        map.as_slice_mut()[..copy_len].copy_from_slice(&data[..copy_len]);
+    }
+
+    /// Zero AC_STATUS (i32 at offset 4 in the graphics page) to signal no active session.
+    fn zero_status(&mut self) {
+        let gfx = self.maps[1].as_slice_mut();
+        if gfx.len() >= 8 {
+            gfx[4..8].fill(0);
+        }
+    }
+
+    fn page_size(&self, page_idx: usize) -> usize {
+        self.maps[page_idx].size()
+    }
+}
+
+/// Either one game's maps (lazy, dropped on stale) or both games' maps (eager, zeroed on stale).
+enum MapMode {
+    /// Single-game: maps created lazily on first data arrival; dropped on stale timeout.
+    Single(GameMapSet),
+    /// Dual-game: maps for both EVO and AC1 created at startup; status zeroed on stale.
+    Dual { evo: GameMapSet, ac1: GameMapSet },
+}
+
+impl MapMode {
+    fn write_page(&mut self, page_idx: usize, data: &[u8]) {
+        match self {
+            Self::Single(set) => set.write_page(page_idx, data),
+            Self::Dual { evo, ac1 } => {
+                evo.write_page(page_idx, data);
+                ac1.write_page(page_idx, data);
+            }
+        }
+    }
+
+    fn zero_status(&mut self) {
+        match self {
+            Self::Single(set) => set.zero_status(),
+            Self::Dual { evo, ac1 } => {
+                evo.zero_status();
+                ac1.zero_status();
+            }
+        }
+    }
+
+    fn page_size(&self, page_idx: usize) -> usize {
+        match self {
+            Self::Single(set) => set.page_size(page_idx),
+            Self::Dual { evo, .. } => evo.page_size(page_idx),
+        }
+    }
+}
+
+// ── Main run ──────────────────────────────────────────────────────────────────
+
+pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()> {
     let _timer = HighResTimer::acquire();
     boost_thread_priority();
     if args.high_priority {
@@ -39,7 +120,6 @@ pub fn run(
         pin_thread_to_core(core);
     }
 
-    // Build UDP socket with a generous receive buffer.
     let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     sock.set_recv_buffer_size(2 * 1024 * 1024)?;
     sock.set_reuse_address(true)?;
@@ -51,14 +131,11 @@ pub fn run(
     let socket: UdpSocket = sock.into();
 
     if args.busy_wait {
-        // Spin on recv_from. Burns one core but cuts OS scheduler wake-up jitter.
         socket.set_nonblocking(true)?;
         println!("Busy-wait mode: target thread will burn one CPU core for lower latency.");
     } else {
         socket.set_read_timeout(Some(Duration::from_secs(1)))?;
     }
-
-    println!("Listening on {}", args.bind);
 
     if !args.unicast {
         let group: Ipv4Addr = args
@@ -69,16 +146,47 @@ pub fn run(
         println!("Joined multicast group {group}");
     }
 
-    // Pre-allocate a single decompression buffer large enough for any page.
-    let max_page = game
+    // In dual mode, create all six maps eagerly so SimHub can connect before data arrives.
+    // In single-game mode, create lazily on first data arrival (existing behavior).
+    let mut maps: Option<MapMode> =
+        if args.game.is_none() {
+            let evo = GameMapSet::create(&game::EVO, DUAL_MAP_SIZE)
+                .map_err(|e| std::io::Error::other(format!("failed to create EVO maps: {e}")))?;
+            let ac1 = GameMapSet::create(&game::AC1, DUAL_MAP_SIZE)
+                .map_err(|e| std::io::Error::other(format!("failed to create AC1 maps: {e}")))?;
+            println!(
+                "Created shared memory maps for {} and {}",
+                game::EVO.name,
+                game::AC1.name
+            );
+            println!(
+            "  {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes)",
+            game::EVO.physics_map, game::EVO.graphics_map, game::EVO.static_map
+        );
+            println!(
+            "  {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes)",
+            game::AC1.physics_map, game::AC1.graphics_map, game::AC1.static_map
+        );
+            Some(MapMode::Dual { evo, ac1 })
+        } else {
+            None
+        };
+
+    println!("Listening on {}", args.bind);
+
+    // Decompression buffer sized to the largest possible page across both games.
+    let max_page = game::EVO
         .max_physics_size
-        .max(game.max_graphics_size)
-        .max(game.max_static_size);
+        .max(game::EVO.max_graphics_size)
+        .max(game::EVO.max_static_size)
+        .max(game::AC1.max_physics_size)
+        .max(game::AC1.max_graphics_size)
+        .max(game::AC1.max_static_size)
+        .max(DUAL_MAP_SIZE);
     let mut decomp_buf = vec![0u8; max_page];
 
     let mut recv_buf = [0u8; MAX_DATAGRAM_SIZE];
     let mut proto = ProtoReceiver::new(max_page);
-    let mut maps: Option<[SharedMap; 3]> = None;
     let mut last_update = Instant::now();
     let mut stats = Stats::new("target");
     let mut seq_start: Option<Instant> = None;
@@ -91,11 +199,7 @@ pub fn run(
 
         match socket.recv_from(&mut recv_buf) {
             Ok((len, _src)) => {
-                // Peek buf_offset directly from the raw header bytes (offset 16..20)
-                // before calling ingest(), so we can read it without holding the
-                // borrow that ingest() places on `proto` via the returned &[u8].
                 let buf_offset = peek_buf_offset(&recv_buf[..len]);
-
                 let (assembled, new_seq) = proto.ingest(&recv_buf[..len]);
 
                 if new_seq {
@@ -110,16 +214,17 @@ pub fn run(
 
                 let page_idx = buf_offset as usize;
                 if page_idx > 2 {
-                    continue; // unknown page type
+                    continue;
                 }
 
                 let compressed_len = if let Some(compressed) = assembled {
-                    // Lazily create all three maps on first data arrival.
+                    // Single-game mode: lazily create maps on first data arrival.
                     if maps.is_none() {
-                        match create_all_maps(game) {
-                            Ok(m) => {
+                        let game = args.game.expect("maps=None only in single-game mode");
+                        match GameMapSet::create(game, DUAL_MAP_SIZE) {
+                            Ok(set) => {
                                 println!("Created shared memory maps for {}.", game.name);
-                                maps = Some(m);
+                                maps = Some(MapMode::Single(set));
                             }
                             Err(e) => {
                                 return Err(std::io::Error::other(format!(
@@ -129,16 +234,20 @@ pub fn run(
                         }
                     }
 
-                    let map = &mut maps.as_mut().unwrap()[page_idx];
-                    let map_size = map.size();
-                    let target_slice = map.as_slice_mut();
-
-                    // Decompress into the staging buffer, then copy into the map.
+                    let map_mode = maps.as_mut().unwrap();
+                    let map_size = map_mode.page_size(page_idx);
                     let compressed_len = compressed.len();
+
                     match decompress_into(compressed, &mut decomp_buf[..max_page]) {
                         Ok(n) => {
-                            let copy_len = n.min(map_size);
-                            target_slice[..copy_len].copy_from_slice(&decomp_buf[..copy_len]);
+                            if n > map_size {
+                                eprintln!(
+                                    "warn: decompressed page {page_idx} is {n} bytes \
+                                     but map is {map_size} bytes — truncating"
+                                );
+                            }
+                            let write_len = n.min(map_size);
+                            map_mode.write_page(page_idx, &decomp_buf[..write_len]);
                             Some((compressed_len, n))
                         }
                         Err(e) => {
@@ -146,12 +255,10 @@ pub fn run(
                             None
                         }
                     }
-                    // `compressed` drops here, releasing the borrow on `proto`.
                 } else {
                     None
                 };
 
-                // `proto` borrow is now released — safe to read its fields.
                 if let Some((clen, decomp_len)) = compressed_len {
                     if let Some(start) = seq_start.take() {
                         let transit_us = start.elapsed().as_micros() as u64;
@@ -171,26 +278,29 @@ pub fn run(
                 if e.kind() == std::io::ErrorKind::WouldBlock
                     || e.kind() == std::io::ErrorKind::TimedOut =>
             {
-                if maps.is_some() && last_update.elapsed() >= args.stale_timeout {
-                    println!(
-                        "No data for {}s — closing {} maps.",
-                        args.stale_timeout.as_secs(),
-                        game.name
-                    );
-                    maps = None;
+                if last_update.elapsed() >= args.stale_timeout {
+                    match maps.as_mut() {
+                        None => {}
+                        Some(MapMode::Single(_)) => {
+                            println!(
+                                "No data for {}s — closing shared memory maps.",
+                                args.stale_timeout.as_secs()
+                            );
+                            maps = None;
+                        }
+                        Some(mode @ MapMode::Dual { .. }) => {
+                            // Dual mode: keep maps alive but signal no active session.
+                            mode.zero_status();
+                            // Reset so we don't re-zero on every subsequent timeout tick.
+                            last_update = Instant::now();
+                        }
+                    }
                 }
             }
 
             Err(e) => return Err(e),
         }
     }
-}
-
-fn create_all_maps(game: &GameConfig) -> Result<[SharedMap; 3], MapError> {
-    let physics = SharedMap::create(game.physics_map, game.max_physics_size)?;
-    let graphics = SharedMap::create(game.graphics_map, game.max_graphics_size)?;
-    let static_ = SharedMap::create(game.static_map, game.max_static_size)?;
-    Ok([physics, graphics, static_])
 }
 
 /// Read `buf_offset` (u32 LE) from byte offset 16 of a raw protocol header.
