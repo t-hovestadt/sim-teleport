@@ -23,6 +23,10 @@ the game were running locally.
 
 No compression, no framing, no state — raw UDP bytes in, raw UDP bytes out.
 
+**For all games in one app:** [sim-bridge](https://github.com/t-hovestadt/sim-bridge)
+bundles Sim Relay with iRacing Teleport and AC Teleport. One binary,
+automatic game detection.
+
 **Companion projects:**
 - [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) — iRacing (shared memory, not UDP)
 - [ac-teleport](https://github.com/t-hovestadt/ac-teleport) — Assetto Corsa / ACE (shared memory)
