@@ -9,9 +9,21 @@ use clap::{Parser, Subcommand};
 use std::sync::mpsc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const TELEPORT_VERSION: &str = env!("IRACING_TELEPORT_VERSION");
+const AC_VERSION: &str = env!("AC_TELEPORT_VERSION");
+const RELAY_VERSION: &str = env!("SIM_RELAY_VERSION");
 
 #[derive(Parser)]
-#[command(name = "sim-bridge", version, about = "Unified launcher for iRacing, AC, and Sim Relay telemetry")]
+#[command(
+    name = "sim-bridge",
+    version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        " (iracing-teleport ", env!("IRACING_TELEPORT_VERSION"),
+        ", ac-teleport ", env!("AC_TELEPORT_VERSION"),
+        ", sim-relay ", env!("SIM_RELAY_VERSION"), ")"
+    ),
+    about = "Unified launcher for iRacing, AC, and Sim Relay telemetry"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Cmd>,
@@ -49,7 +61,11 @@ fn main() {
             let mode = config::load()
                 .map(|c| c.mode)
                 .unwrap_or_else(|_| "source".to_string());
-            if mode == "target" { Cmd::Target } else { Cmd::Source }
+            if mode == "target" {
+                Cmd::Target
+            } else {
+                Cmd::Source
+            }
         }
     };
     match cmd {
@@ -68,7 +84,9 @@ fn run_source() {
         eprintln!("Warning: could not open log file: {e}");
         logger::Logger::stderr()
     });
-    log.log(&format!("sim-bridge v{VERSION} — source"));
+    log.log(&format!(
+        "sim-bridge v{VERSION} — source (teleport={TELEPORT_VERSION}, ac={AC_VERSION}, relay={RELAY_VERSION})"
+    ));
 
     let cfg = match config::load() {
         Ok(c) => c,
@@ -93,7 +111,9 @@ fn run_target() {
         eprintln!("Warning: could not open log file: {e}");
         logger::Logger::stderr()
     });
-    log.log(&format!("sim-bridge v{VERSION} — target"));
+    log.log(&format!(
+        "sim-bridge v{VERSION} — target (teleport={TELEPORT_VERSION}, ac={AC_VERSION}, relay={RELAY_VERSION})"
+    ));
 
     let cfg = match config::load() {
         Ok(c) => c,
@@ -155,10 +175,22 @@ fn run_list() {
     println!("Shared Memory (process-detected, auto-started by sim-bridge source):");
     println!("  {:<35} {:<35} Port", "Game", "Process");
     println!("  {}", "-".repeat(80));
-    println!("  {:<35} {:<35} {}", "iRacing", "iRacingSim64DX11.exe", cfg.ports.iracing_teleport);
-    println!("  {:<35} {:<35} {}", "Assetto Corsa EVO", "AssettoCorsa_EVO.exe", cfg.ports.ac_teleport);
-    println!("  {:<35} {:<35} {}", "Assetto Corsa", "acs.exe", cfg.ports.ac_teleport);
-    println!("  {:<35} {:<35} {}", "Assetto Corsa Competizione", "acc.exe", cfg.ports.ac_teleport);
+    println!(
+        "  {:<35} {:<35} {}",
+        "iRacing", "iRacingSim64DX11.exe", cfg.ports.iracing_teleport
+    );
+    println!(
+        "  {:<35} {:<35} {}",
+        "Assetto Corsa EVO", "AssettoCorsa_EVO.exe", cfg.ports.ac_teleport
+    );
+    println!(
+        "  {:<35} {:<35} {}",
+        "Assetto Corsa", "acs.exe", cfg.ports.ac_teleport
+    );
+    println!(
+        "  {:<35} {:<35} {}",
+        "Assetto Corsa Competizione", "acc.exe", cfg.ports.ac_teleport
+    );
     println!();
     println!("UDP Relay (auto-detected by sim-relay, always running on source):");
     for game in sim_relay::games::GAMES {
@@ -172,27 +204,31 @@ fn run_firewall() {
     let iracing_port = cfg.ports.iracing_teleport;
     let ac_port = cfg.ports.ac_teleport;
 
-    println!("# Run the following in PowerShell (Administrator) on the gaming PC:");
+    // Collect unique sim-relay ports for the target PC rule.
+    let mut relay_ports: Vec<u16> = sim_relay::games::GAMES
+        .iter()
+        .map(|g| g.default_port)
+        .collect();
+    relay_ports.sort_unstable();
+    relay_ports.dedup();
+    let relay_port_list = relay_ports
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    println!("# Run the following in PowerShell (Administrator).");
+    println!("# Gaming PC (receives resync packets from SimHub PC):");
     println!();
-    println!("# iRacing Teleport");
+    println!("New-NetFirewallRule -DisplayName \"sim-bridge source\" `");
     println!(
-        "New-NetFirewallRule -DisplayName \"sim-bridge iRacing (UDP {iracing_port})\" `"
+        "    -Direction Inbound -Protocol UDP -LocalPort {iracing_port},{ac_port} -Action Allow"
     );
-    println!("    -Direction Inbound -Protocol UDP -LocalPort {iracing_port} -Action Allow");
     println!();
-    println!("# AC Teleport");
+    println!("# SimHub PC (receives telemetry from gaming PC):");
+    println!();
+    println!("New-NetFirewallRule -DisplayName \"sim-bridge target\" `");
     println!(
-        "New-NetFirewallRule -DisplayName \"sim-bridge AC Teleport (UDP {ac_port})\" `"
+        "    -Direction Inbound -Protocol UDP -LocalPort {iracing_port},{ac_port},{relay_port_list} -Action Allow"
     );
-    println!("    -Direction Inbound -Protocol UDP -LocalPort {ac_port} -Action Allow");
-    println!();
-    println!("# Sim Relay — add rules for each game you play (see 'sim-bridge list'):");
-    for game in sim_relay::games::GAMES {
-        let port = game.default_port;
-        let name = game.name;
-        println!(
-            "New-NetFirewallRule -DisplayName \"sim-bridge {name} (UDP {port})\" `"
-        );
-        println!("    -Direction Inbound -Protocol UDP -LocalPort {port} -Action Allow");
-    }
 }

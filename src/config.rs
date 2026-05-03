@@ -62,10 +62,18 @@ pub struct AdvancedConfig {
     pub datagram_size: usize,
 }
 
-fn default_stale_timeout() -> u64 { 10 }
-fn default_reconnect_timeout() -> u64 { 5 }
-fn default_ac_poll_rate() -> u32 { 60 }
-fn default_datagram_size() -> usize { 65000 }
+fn default_stale_timeout() -> u64 {
+    10
+}
+fn default_reconnect_timeout() -> u64 {
+    5
+}
+fn default_ac_poll_rate() -> u32 {
+    60
+}
+fn default_datagram_size() -> usize {
+    65000
+}
 
 impl Default for AdvancedConfig {
     fn default() -> Self {
@@ -114,8 +122,8 @@ pub fn load() -> anyhow::Result<Config> {
     match find_config() {
         Some(path) => {
             let text = fs::read_to_string(&path)?;
-            let config: Config = toml::from_str(&text)
-                .map_err(|e| anyhow::anyhow!("config parse error: {e}"))?;
+            let config: Config =
+                toml::from_str(&text).map_err(|e| anyhow::anyhow!("config parse error: {e}"))?;
             Ok(config)
         }
         None => {
@@ -245,18 +253,34 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
         "source".to_string()
     };
 
-    print!("This PC's IP (source/gaming PC): [{}] ", config.network.source_ip);
-    io::stdout().flush()?;
-    let input = read_line();
-    if !input.is_empty() {
-        config.network.source_ip = input;
-    }
+    if config.mode == "source" {
+        print!("This PC's IP (gaming PC): [{}] ", config.network.source_ip);
+        io::stdout().flush()?;
+        let input = read_line();
+        if !input.is_empty() {
+            config.network.source_ip = input;
+        }
 
-    print!("Target PC's IP (SimHub PC): [{}] ", config.network.target_ip);
-    io::stdout().flush()?;
-    let input = read_line();
-    if !input.is_empty() {
-        config.network.target_ip = input;
+        print!("Remote SimHub PC's IP: [{}] ", config.network.target_ip);
+        io::stdout().flush()?;
+        let input = read_line();
+        if !input.is_empty() {
+            config.network.target_ip = input;
+        }
+    } else {
+        print!("Remote gaming PC's IP: [{}] ", config.network.source_ip);
+        io::stdout().flush()?;
+        let input = read_line();
+        if !input.is_empty() {
+            config.network.source_ip = input;
+        }
+
+        print!("This PC's IP (SimHub PC): [{}] ", config.network.target_ip);
+        io::stdout().flush()?;
+        let input = read_line();
+        if !input.is_empty() {
+            config.network.target_ip = input;
+        }
     }
 
     println!();
@@ -275,6 +299,10 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
             _ => {}
         }
     }
+
+    println!();
+    println!("Tip: Place sim-bridge.exe in a user-writable folder like C:\\Simracing\\");
+    println!("     (not in Program Files). The log and config are written next to the exe.");
 
     let save_path = exe_dir_config();
     write_config(&config, &save_path)?;

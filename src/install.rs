@@ -9,16 +9,7 @@ pub fn install(mode: &str) -> anyhow::Result<()> {
 
     let status = std::process::Command::new("schtasks")
         .args([
-            "/create",
-            "/tn",
-            TASK_NAME,
-            "/tr",
-            &task_run,
-            "/sc",
-            "onlogon",
-            "/rl",
-            "highest",
-            "/f",
+            "/create", "/tn", TASK_NAME, "/tr", &task_run, "/sc", "onlogon", "/rl", "highest", "/f",
         ])
         .status()?;
 

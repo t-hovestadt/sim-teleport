@@ -47,7 +47,14 @@ impl TargetSlot {
     fn new(app: TargetApp, config: Config) -> Self {
         let (tx, rx) = mpsc::channel::<()>();
         let handle = app.spawn(config.clone(), rx);
-        Self { app, handle, shutdown_tx: tx, config, crash_count: 0, next_restart: None }
+        Self {
+            app,
+            handle,
+            shutdown_tx: tx,
+            config,
+            crash_count: 0,
+            next_restart: None,
+        }
     }
 
     fn is_crashed(&self) -> bool {
@@ -72,7 +79,9 @@ impl TargetSlot {
         };
         log.log(&format!(
             "[{}] Thread crashed (#{}) — restarting in {}s",
-            self.app.name(), self.crash_count, delay_secs
+            self.app.name(),
+            self.crash_count,
+            delay_secs
         ));
         self.next_restart = Some(Instant::now() + Duration::from_secs(delay_secs));
         let (tx, rx) = mpsc::channel::<()>();
@@ -136,7 +145,9 @@ fn spawn_ac_target(config: Config, rx: Receiver<()>) -> JoinHandle<()> {
                     busy_wait: config.apps.busy_wait,
                     pin_core: None,
                     high_priority: config.apps.high_priority,
-                    stale_timeout: std::time::Duration::from_secs(config.advanced.stale_timeout_secs),
+                    stale_timeout: std::time::Duration::from_secs(
+                        config.advanced.stale_timeout_secs,
+                    ),
                 },
                 rx,
             ) {
@@ -175,12 +186,18 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let mut slots: Vec<TargetSlot> = Vec::new();
 
     if config.apps.iracing_teleport_enabled {
-        log.log(&format!("  iRacing Teleport  :{}", config.ports.iracing_teleport));
+        log.log(&format!(
+            "  iRacing Teleport  :{}",
+            config.ports.iracing_teleport
+        ));
         slots.push(TargetSlot::new(TargetApp::IracingTeleport, config.clone()));
     }
 
     if config.apps.ac_teleport_enabled {
-        log.log(&format!("  AC Teleport       :{}", config.ports.ac_teleport));
+        log.log(&format!(
+            "  AC Teleport       :{}",
+            config.ports.ac_teleport
+        ));
         slots.push(TargetSlot::new(TargetApp::AcTeleport, config.clone()));
     }
 

@@ -29,7 +29,9 @@ impl ProcessScanner {
 
     /// Returns true if any of the given exe names (case-insensitive) is currently running.
     pub fn is_running(&self, names: &[&str]) -> bool {
-        names.iter().any(|n| self.snapshot.contains(&n.to_lowercase()))
+        names
+            .iter()
+            .any(|n| self.snapshot.contains(&n.to_lowercase()))
     }
 
     #[cfg(windows)]
@@ -53,8 +55,8 @@ impl ProcessScanner {
                         .iter()
                         .position(|&c| c == 0)
                         .unwrap_or(entry.szExeFile.len());
-                    let name = String::from_utf16_lossy(&entry.szExeFile[..null_pos])
-                        .to_lowercase();
+                    let name =
+                        String::from_utf16_lossy(&entry.szExeFile[..null_pos]).to_lowercase();
                     self.snapshot.insert(name);
                     if Process32NextW(snapshot, &mut entry) == 0 {
                         break;

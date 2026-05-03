@@ -20,10 +20,7 @@ impl Logger {
                 let _ = std::fs::write(&path, "");
             }
         }
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
         Ok(Self {
             file: Some(Arc::new(Mutex::new(BufWriter::new(file)))),
         })

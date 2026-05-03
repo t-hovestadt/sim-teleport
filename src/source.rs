@@ -21,17 +21,29 @@ struct Detection {
 
 fn detect_shmem_game(scanner: &ProcessScanner, cfg: &Config) -> Option<Detection> {
     if cfg.apps.iracing_teleport_enabled && scanner.is_running(&["iRacingSim64DX11.exe"]) {
-        return Some(Detection { game: ShmemGame::Iracing, label: "iRacing" });
+        return Some(Detection {
+            game: ShmemGame::Iracing,
+            label: "iRacing",
+        });
     }
     if cfg.apps.ac_teleport_enabled {
         if scanner.is_running(&["AssettoCorsa_EVO.exe", "assettocorsaevo.exe"]) {
-            return Some(Detection { game: ShmemGame::AcTeleport, label: "Assetto Corsa EVO" });
+            return Some(Detection {
+                game: ShmemGame::AcTeleport,
+                label: "Assetto Corsa EVO",
+            });
         }
         if scanner.is_running(&["acs.exe"]) {
-            return Some(Detection { game: ShmemGame::AcTeleport, label: "Assetto Corsa" });
+            return Some(Detection {
+                game: ShmemGame::AcTeleport,
+                label: "Assetto Corsa",
+            });
         }
         if scanner.is_running(&["acc.exe"]) {
-            return Some(Detection { game: ShmemGame::AcTeleport, label: "Assetto Corsa Competizione" });
+            return Some(Detection {
+                game: ShmemGame::AcTeleport,
+                label: "Assetto Corsa Competizione",
+            });
         }
     }
     None
@@ -46,12 +58,16 @@ struct FailureTracker {
 
 impl FailureTracker {
     fn new() -> Self {
-        Self { failures: Vec::new(), disabled_until: None }
+        Self {
+            failures: Vec::new(),
+            disabled_until: None,
+        }
     }
 
     fn record(&mut self, log: &Logger, app: &str) {
         let now = Instant::now();
-        self.failures.retain(|t| now.duration_since(*t) < Duration::from_secs(60));
+        self.failures
+            .retain(|t| now.duration_since(*t) < Duration::from_secs(60));
         self.failures.push(now);
         if self.failures.len() >= 3 {
             self.disabled_until = Some(now + Duration::from_secs(300));
@@ -89,9 +105,18 @@ impl DetachedThread {
 
 enum SlotState {
     Idle,
-    Running { handle: JoinHandle<()>, game: ShmemGame },
-    Draining { since: Instant, handle: JoinHandle<()>, game: ShmemGame },
-    AlwaysOn { handle: JoinHandle<()> },
+    Running {
+        handle: JoinHandle<()>,
+        game: ShmemGame,
+    },
+    Draining {
+        since: Instant,
+        handle: JoinHandle<()>,
+        game: ShmemGame,
+    },
+    AlwaysOn {
+        handle: JoinHandle<()>,
+    },
 }
 
 struct AppSlot {
@@ -121,7 +146,10 @@ impl AppSlot {
         // Guard: previous detached thread may still hold its socket.
         if let Some(ref d) = self.detached {
             if !d.is_gone() {
-                log.log(&format!("[{}] Waiting for detached thread to release socket", self.name));
+                log.log(&format!(
+                    "[{}] Waiting for detached thread to release socket",
+                    self.name
+                ));
                 return;
             }
             self.detached = None;
@@ -168,14 +196,8 @@ impl AppSlot {
                     if let Err(e) = ac_teleport::source::run(
                         ac_teleport::SourceArgs {
                             game: None,
-                            target: format!(
-                                "{}:{}",
-                                cfg.network.target_ip, cfg.ports.ac_teleport
-                            ),
-                            bind: format!(
-                                "{}:{}",
-                                cfg.network.source_ip, cfg.ports.ac_teleport
-                            ),
+                            target: format!("{}:{}", cfg.network.target_ip, cfg.ports.ac_teleport),
+                            bind: format!("{}:{}", cfg.network.source_ip, cfg.ports.ac_teleport),
                             unicast: true,
                             busy_wait: cfg.apps.busy_wait,
                             pin_core: None,
@@ -232,7 +254,11 @@ impl AppSlot {
     fn begin_drain(&mut self) {
         let state = std::mem::replace(&mut self.state, SlotState::Idle);
         if let SlotState::Running { handle, game } = state {
-            self.state = SlotState::Draining { since: Instant::now(), handle, game };
+            self.state = SlotState::Draining {
+                since: Instant::now(),
+                handle,
+                game,
+            };
         }
     }
 
@@ -336,6 +362,11 @@ fn game_label(game: Option<ShmemGame>) -> &'static str {
 // ── Main source loop ──────────────────────────────────────────────────────────
 
 pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
+    if config.network.source_ip == config.network.target_ip {
+        log.log("ERROR: source_ip and target_ip are the same. source mode runs on the gaming PC, target mode runs on the SimHub PC. Check sim-bridge.toml.");
+        return;
+    }
+
     log.log(&format!(
         "Network: {} -> {}",
         config.network.source_ip, config.network.target_ip
@@ -347,9 +378,21 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     // Issue #14: log enabled/disabled status so users can confirm config is applied.
     log.log(&format!(
         "Apps: iRacing [{}] | AC [{}] | Sim Relay [{}]",
-        if config.apps.iracing_teleport_enabled { "enabled" } else { "disabled" },
-        if config.apps.ac_teleport_enabled { "enabled" } else { "disabled" },
-        if config.apps.sim_relay_enabled { "enabled" } else { "disabled" },
+        if config.apps.iracing_teleport_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        if config.apps.ac_teleport_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        if config.apps.sim_relay_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
     ));
 
     let scan_interval = Duration::from_secs(config.detection.scan_interval);
@@ -419,7 +462,10 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
             // Same game re-detected while draining — cancel shutdown (issue #5 fix).
             (SlotState::Draining { .. }, Some(d)) if draining_game == Some(d.game) => {
-                log.log(&format!("[{}] Game re-detected — cancelling shutdown", d.label));
+                log.log(&format!(
+                    "[{}] Game re-detected — cancelling shutdown",
+                    d.label
+                ));
                 shmem.cancel_drain();
             }
 
