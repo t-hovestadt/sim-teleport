@@ -44,6 +44,16 @@ Rename the downloaded files to `source.exe`, `target.exe`, and `sim-relay.exe` a
 
 ---
 
+## Windows SmartScreen
+
+On first run, Windows may show "Windows protected your PC." This is normal for unsigned open-source software.
+
+To unblock: right-click the `.exe` → **Properties** → check **Unblock** at the bottom of the General tab → **OK**.
+
+Or click **More info** on the SmartScreen dialog, then **Run anyway**.
+
+---
+
 ## Quick Start
 
 **Gaming PC:**
