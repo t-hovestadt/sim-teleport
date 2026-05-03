@@ -322,6 +322,14 @@ and the map being forwarded — currently out of scope.
 | `sim-bridge firewall` | Print copy-paste firewall rules for both PCs. |
 | `sim-bridge --version` | Show version including sub-app versions. |
 
+### Session report
+
+sim-bridge writes `sim-bridge-report.txt` next to the exe every 60 seconds and on
+clean shutdown. It contains detection counters (total scan cycles, probe counts,
+process matches), a session history (which game started, how it was detected, when
+it stopped and why), and any errors logged during the run. Open it in any text
+editor for a quick post-session diagnostic summary.
+
 ---
 
 ## Auto-start (Task Scheduler)
