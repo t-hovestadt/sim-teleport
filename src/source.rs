@@ -192,6 +192,13 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
             scanner.refresh();
             last_scan = Instant::now();
 
+            // One-active-game constraint: only one relay may be Active or Draining
+            // at a time. Compute this before the loop so we can prevent a second
+            // relay from activating in the same scan cycle.
+            let mut any_already_active = relays
+                .iter()
+                .any(|r| matches!(r.phase, RelayPhase::Active | RelayPhase::Draining { .. }));
+
             for relay in &mut relays {
                 if relay.group.console && !args.include_console {
                     continue;
@@ -207,22 +214,28 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
                 let current_phase = std::mem::replace(&mut relay.phase, RelayPhase::Idle);
                 relay.phase = match current_phase {
                     RelayPhase::Idle if game_running => {
-                        match bind_socket(relay.group.port, &args.bind) {
-                            Ok(s) => {
-                                println!(
-                                    "[{}] detected \u{2014} binding port {}",
-                                    relay.group.display_name, relay.group.port
-                                );
-                                relay.socket = Some(s);
-                                relay.first_packet = true;
-                                RelayPhase::Active
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "[{}] failed to bind port {}: {e}",
-                                    relay.group.display_name, relay.group.port
-                                );
-                                RelayPhase::Idle
+                        if any_already_active {
+                            // Another relay is active — don't stack.
+                            RelayPhase::Idle
+                        } else {
+                            match bind_socket(relay.group.port, &args.bind) {
+                                Ok(s) => {
+                                    println!(
+                                        "[{}] detected \u{2014} binding port {}",
+                                        relay.group.display_name, relay.group.port
+                                    );
+                                    relay.socket = Some(s);
+                                    relay.first_packet = true;
+                                    any_already_active = true;
+                                    RelayPhase::Active
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "[{}] failed to bind port {}: {e}",
+                                        relay.group.display_name, relay.group.port
+                                    );
+                                    RelayPhase::Idle
+                                }
                             }
                         }
                     }
