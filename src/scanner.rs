@@ -69,6 +69,36 @@ impl ProcessScanner {
     }
 }
 
+// ── iRacing event probe ───────────────────────────────────────────────────────
+
+/// Check if iRacing is running by probing its data-valid named event.
+/// The event only exists while iRacing is running — no stale state possible.
+/// One syscall, ~1 µs, definitive answer.
+#[cfg(windows)]
+pub fn probe_iracing_event() -> bool {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::OpenEventW;
+
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    let name: Vec<u16> = "Local\\IRSDKDataValidEvent"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        let handle = OpenEventW(SYNCHRONIZE, 0, name.as_ptr());
+        if handle == 0 {
+            return false;
+        }
+        CloseHandle(handle);
+        true
+    }
+}
+
+#[cfg(not(windows))]
+pub fn probe_iracing_event() -> bool {
+    false
+}
+
 // ── AC shared-memory probing ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -4,7 +4,9 @@ use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::logger::Logger;
-use crate::scanner::{probe_ac_maps, ProcessScanner, ShmemDetection};
+use crate::scanner::{
+    probe_ac_maps, probe_iracing_event, AcProbeResult, ProcessScanner, ShmemDetection,
+};
 
 // ── Game detection ────────────────────────────────────────────────────────────
 
@@ -25,26 +27,33 @@ struct Detection {
     label: &'static str,
 }
 
+/// Determine the desired game from pre-computed probe results.
+///
+/// `iracing_detected`: result of `probe_iracing_event()`.
+/// `ac`: result of `probe_ac_maps()` — both fields are `None` when the probe was skipped.
+/// `running_ac`: the game currently in `SlotState::Running`, if it is an AC variant.
+///   When the AC probe was skipped because we were already running an AC game, this is
+///   the game to re-return so the slot stays active without an unnecessary re-probe.
+/// `scanner`: process snapshot — only consulted for AC stale tiebreaker and sim-relay;
+///   may be stale when `need_process_scan` was false and `scanner.refresh()` was skipped.
 fn detect_shmem_game(
+    iracing_detected: bool,
+    ac: &AcProbeResult,
+    running_ac: Option<ShmemGame>,
     scanner: &ProcessScanner,
     cfg: &Config,
-    current: Option<ShmemGame>,
 ) -> Option<Detection> {
-    if cfg.apps.iracing_teleport_enabled && scanner.is_running(&["iRacingSim64DX11.exe"]) {
+    if cfg.apps.iracing_teleport_enabled && iracing_detected {
         return Some(Detection {
             game: ShmemGame::Iracing,
             label: "iRacing",
         });
     }
     if cfg.apps.ac_teleport_enabled {
-        // Skip the 100 ms probe when we're already committed to iRacing or an AC variant.
-        let skip_probe = matches!(
-            current,
-            Some(ShmemGame::Iracing | ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc)
-        );
-        if skip_probe {
-            // Re-return the current AC game to hold the slot without re-probing.
-            if let Some(c @ (ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc)) = current {
+        // When the probe was skipped (both fields None) because we were already running
+        // an AC game, re-return that game so the slot stays active.
+        if ac.ac_evo.is_none() && ac.ac1.is_none() {
+            if let Some(c @ (ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc)) = running_ac {
                 let label = match c {
                     ShmemGame::AcEvo => "Assetto Corsa EVO",
                     ShmemGame::Ac1 => "Assetto Corsa",
@@ -53,56 +62,54 @@ fn detect_shmem_game(
                 };
                 return Some(Detection { game: c, label });
             }
-        } else {
-            let ac = probe_ac_maps();
+        }
 
-            match ac.ac_evo {
-                Some(ShmemDetection::Live) => {
-                    return Some(Detection {
-                        game: ShmemGame::AcEvo,
-                        label: "Assetto Corsa EVO",
-                    });
-                }
-                // Maps exist but no session — only trust if the process is running.
-                Some(ShmemDetection::Stale)
-                    if scanner.is_running(&["AssettoCorsa_EVO.exe", "assettocorsaevo.exe"]) =>
-                {
-                    return Some(Detection {
-                        game: ShmemGame::AcEvo,
-                        label: "Assetto Corsa EVO",
-                    });
-                }
-                _ => {} // None or Stale without process → skip
+        match ac.ac_evo {
+            Some(ShmemDetection::Live) => {
+                return Some(Detection {
+                    game: ShmemGame::AcEvo,
+                    label: "Assetto Corsa EVO",
+                });
             }
+            // Maps exist but no session — only trust if the process is running.
+            Some(ShmemDetection::Stale)
+                if scanner.is_running(&["AssettoCorsa_EVO.exe", "assettocorsaevo.exe"]) =>
+            {
+                return Some(Detection {
+                    game: ShmemGame::AcEvo,
+                    label: "Assetto Corsa EVO",
+                });
+            }
+            _ => {} // None or Stale without process → skip
+        }
 
-            match ac.ac1 {
-                Some(ShmemDetection::Live) => {
-                    // ACC and AC1 share the same map names — use process to distinguish.
-                    if scanner.is_running(&["acc.exe"]) {
-                        return Some(Detection {
-                            game: ShmemGame::Acc,
-                            label: "Assetto Corsa Competizione",
-                        });
-                    }
-                    return Some(Detection {
-                        game: ShmemGame::Ac1,
-                        label: "Assetto Corsa",
-                    });
-                }
-                Some(ShmemDetection::Stale) if scanner.is_running(&["acc.exe"]) => {
+        match ac.ac1 {
+            Some(ShmemDetection::Live) => {
+                // ACC and AC1 share the same map names — use process to distinguish.
+                if scanner.is_running(&["acc.exe"]) {
                     return Some(Detection {
                         game: ShmemGame::Acc,
                         label: "Assetto Corsa Competizione",
                     });
                 }
-                Some(ShmemDetection::Stale) if scanner.is_running(&["acs.exe"]) => {
-                    return Some(Detection {
-                        game: ShmemGame::Ac1,
-                        label: "Assetto Corsa",
-                    });
-                }
-                _ => {} // None or Stale without process → skip
+                return Some(Detection {
+                    game: ShmemGame::Ac1,
+                    label: "Assetto Corsa",
+                });
             }
+            Some(ShmemDetection::Stale) if scanner.is_running(&["acc.exe"]) => {
+                return Some(Detection {
+                    game: ShmemGame::Acc,
+                    label: "Assetto Corsa Competizione",
+                });
+            }
+            Some(ShmemDetection::Stale) if scanner.is_running(&["acs.exe"]) => {
+                return Some(Detection {
+                    game: ShmemGame::Ac1,
+                    label: "Assetto Corsa",
+                });
+            }
+            _ => {} // None or Stale without process → skip
         }
     }
     // sim-relay UDP games (lowest priority — only when shmem games are absent)
@@ -481,8 +488,56 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             break;
         }
 
-        scanner.refresh();
-        let desired = detect_shmem_game(&scanner, &config, shmem.current_game());
+        // ── Detection ────────────────────────────────────────────────────────────
+        // Priority order: iRacing (event probe, ~1µs) → AC (shmem probe, ~100ms)
+        //                 → sim-relay (process scan, ~1ms).
+        // Each tier is only evaluated when higher tiers miss, keeping steady-state
+        // overhead to a single syscall when iRacing is active.
+
+        // Tier 1: iRacing — named event probe, no stale state possible.
+        let iracing_detected = config.apps.iracing_teleport_enabled && probe_iracing_event();
+
+        // Tier 2: AC shmem probe — skip when already committed (Running) to iRacing
+        // or an AC variant to avoid the 100ms sleep on every scan cycle.
+        let running_game = match &shmem.state {
+            SlotState::Running { game, .. } => Some(*game),
+            _ => None,
+        };
+        let skip_ac_probe = iracing_detected
+            || matches!(
+                running_game,
+                Some(ShmemGame::Iracing | ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc)
+            );
+        let ac_probe = if config.apps.ac_teleport_enabled && !skip_ac_probe {
+            probe_ac_maps()
+        } else {
+            AcProbeResult {
+                ac_evo: None,
+                ac1: None,
+            }
+        };
+
+        // Tier 3: Process scan — only when AC stale tiebreaker or sim-relay detection
+        // is needed. Skipped entirely when iRacing or a live AC game is detected.
+        let need_process_scan = config.apps.ac_teleport_enabled
+            && (matches!(ac_probe.ac_evo, Some(ShmemDetection::Stale))
+                || matches!(
+                    ac_probe.ac1,
+                    Some(ShmemDetection::Live | ShmemDetection::Stale)
+                ))
+            || (config.apps.sim_relay_enabled
+                && !iracing_detected
+                && ac_probe.ac_evo.is_none()
+                && ac_probe.ac1.is_none());
+        if need_process_scan {
+            scanner.refresh();
+        }
+
+        let running_ac = match running_game {
+            Some(g @ (ShmemGame::AcEvo | ShmemGame::Ac1 | ShmemGame::Acc)) => Some(g),
+            _ => None,
+        };
+        let desired = detect_shmem_game(iracing_detected, &ac_probe, running_ac, &scanner, &config);
 
         if shmem.is_running_finished() {
             let name = game_label(shmem.current_game());
