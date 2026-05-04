@@ -47,6 +47,10 @@ pub struct Args {
     /// Bind all ports immediately, skip process detection (alias for --all)
     #[arg(long)]
     pub force_bind: bool,
+    /// Port offset added to target address. Source sends to target:(game_port + offset).
+    /// Default 0 (standalone); sim-bridge uses 10000 to avoid SimHub binding conflict.
+    #[arg(long, default_value = "0")]
+    pub port_offset: u16,
 }
 
 /// Phase of a relay — tracks detection/drain timing. Socket is kept separately.
@@ -111,13 +115,22 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
 
     let mut relays: Vec<ManagedRelay> = Vec::new();
     for group in selected {
-        let target_addr: SocketAddr =
-            format!("{target_ip}:{}", group.port).parse().map_err(|e| {
-                io::Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("invalid target '{}': {e}", args.target),
-                )
-            })?;
+        let send_port = match group.port.checked_add(args.port_offset) {
+            Some(p) => p,
+            None => {
+                eprintln!(
+                    "[{}] port {} + offset {} overflows u16 — skipping",
+                    group.display_name, group.port, args.port_offset
+                );
+                continue;
+            }
+        };
+        let target_addr: SocketAddr = format!("{target_ip}:{send_port}").parse().map_err(|e| {
+            io::Error::new(
+                ErrorKind::InvalidInput,
+                format!("invalid target '{}': {e}", args.target),
+            )
+        })?;
 
         let local_addr = if args.local_forward {
             let local_port = group.port.saturating_add(1000);

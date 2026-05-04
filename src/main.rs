@@ -50,6 +50,9 @@ enum Command {
         /// Bind all ports immediately, skip process detection (alias for --all)
         #[arg(long)]
         force_bind: bool,
+        /// Port offset added to target address (default 0).
+        #[arg(long, default_value = "0")]
+        port_offset: u16,
     },
     /// Receive forwarded telemetry and relay to SimHub on this PC
     Target {
@@ -71,6 +74,9 @@ enum Command {
         /// Spin on recv instead of sleeping (lower latency, higher CPU)
         #[arg(long)]
         busy_wait: bool,
+        /// Port offset for recv sockets: listens on (game_port + offset), forwards to game_port (default 0).
+        #[arg(long, default_value = "0")]
+        port_offset: u16,
     },
     /// List supported games, ports, and setup instructions
     List,
@@ -90,6 +96,7 @@ fn main() -> io::Result<()> {
             grace_period,
             include_console,
             force_bind,
+            port_offset,
         } => {
             let (tx, rx) = mpsc::channel::<()>();
             ctrlc::set_handler(move || {
@@ -109,6 +116,7 @@ fn main() -> io::Result<()> {
                     grace_period,
                     include_console,
                     force_bind,
+                    port_offset,
                 },
                 rx,
             )
@@ -120,6 +128,7 @@ fn main() -> io::Result<()> {
             forward_to,
             high_priority,
             busy_wait,
+            port_offset,
         } => {
             let (tx, rx) = mpsc::channel::<()>();
             ctrlc::set_handler(move || {
@@ -136,6 +145,7 @@ fn main() -> io::Result<()> {
                     high_priority,
                     busy_wait,
                     on_game_active: None,
+                    port_offset,
                 },
                 rx,
             )

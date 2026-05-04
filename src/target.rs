@@ -38,6 +38,10 @@ pub struct Args {
     /// Not a CLI argument — set programmatically when running as a library.
     #[arg(skip)]
     pub on_game_active: Option<GameActiveCb>,
+    /// Port offset for recv sockets. Target listens on (game_port + offset) and forwards to
+    /// 127.0.0.1:game_port where SimHub reads. Default 0; sim-bridge uses 10000.
+    #[arg(long, default_value = "0")]
+    pub port_offset: u16,
 }
 
 struct GameReceiver {
@@ -76,10 +80,21 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
 
     let mut receivers: Vec<GameReceiver> = Vec::new();
     for group in selected {
+        let listen_port = match group.port.checked_add(args.port_offset) {
+            Some(p) => p,
+            None => {
+                eprintln!(
+                    "[{}] port {} + offset {} overflows u16 — skipping",
+                    group.display_name, group.port, args.port_offset
+                );
+                continue;
+            }
+        };
+
         let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         sock.set_reuse_address(true)?;
         sock.set_recv_buffer_size(512 * 1024)?;
-        let bind_addr = SocketAddr::from(([0, 0, 0, 0], group.port));
+        let bind_addr = SocketAddr::from(([0, 0, 0, 0], listen_port));
         sock.bind(&bind_addr.into())?;
         let recv_socket: UdpSocket = sock.into();
         recv_socket.set_nonblocking(true)?;
@@ -88,12 +103,13 @@ pub fn run(args: Args, shutdown: mpsc::Receiver<()>) -> io::Result<()> {
         // preventing loopback packets from being re-received by this same socket.
         let fwd_socket = UdpSocket::bind("0.0.0.0:0")?;
 
+        // Forward to the original game port — SimHub reads there, no binding conflict.
         let forward_addr =
             forward_override.unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], group.port)));
 
         println!(
-            "[{}] listening on 0.0.0.0:{} → {forward_addr}",
-            group.display_name, group.port
+            "[{}] listening on 0.0.0.0:{listen_port} → {forward_addr}",
+            group.display_name
         );
 
         receivers.push(GameReceiver {
