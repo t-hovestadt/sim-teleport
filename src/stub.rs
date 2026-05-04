@@ -1,12 +1,12 @@
-/// StubManager: spawn short-lived named processes so SimHub's plugin process-check passes.
-///
-/// SimHub's AC plugin (ACSharedMemory.dll) calls IsProcessRunning before reading shared memory.
-/// On the target PC no game process exists, so the plugin silently skips telemetry even after
-/// sim-bridge has populated the maps. Spawning a copy of sim-bridge.exe named acs.exe (etc.)
-/// satisfies the check. Stubs are killed when AC data goes stale and on sim-bridge shutdown.
-///
-/// A Windows Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE ensures stubs are killed
-/// even if sim-bridge crashes (handles are closed by the OS on process termination).
+//! StubManager: spawn short-lived named processes so SimHub's plugin process-check passes.
+//!
+//! SimHub's AC plugin (ACSharedMemory.dll) calls IsProcessRunning before reading shared memory.
+//! On the target PC no game process exists, so the plugin silently skips telemetry even after
+//! sim-bridge has populated the maps. Spawning a copy of sim-bridge.exe named acs.exe (etc.)
+//! satisfies the check. Stubs are killed when AC data goes stale and on sim-bridge shutdown.
+//!
+//! A Windows Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE ensures stubs are killed
+//! even if sim-bridge crashes (handles are closed by the OS on process termination).
 
 #[cfg(windows)]
 use std::collections::HashMap;
@@ -142,7 +142,7 @@ impl StubManager {
             }
         }
 
-        let mut child = std::process::Command::new(&stub_path)
+        let child = std::process::Command::new(&stub_path)
             .arg("stub")
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
@@ -205,14 +205,12 @@ fn setup_ac_stub_environment(stub_dir: &std::path::Path) {
             .join("Documents")
             .join("Assetto Corsa")
             .join("cfg");
-        if !ac_cfg.exists() {
-            if std::fs::create_dir_all(&ac_cfg).is_ok() {
-                let _ = std::fs::write(
-                    ac_cfg.join("python.ini"),
-                    "[SIMHUB]\r\nACTIVE=1\r\n[SIMHUB_LOG]\r\nACTIVE=0\r\n",
-                );
-                eprintln!("[stub] created Documents\\Assetto Corsa\\cfg\\python.ini");
-            }
+        if !ac_cfg.exists() && std::fs::create_dir_all(&ac_cfg).is_ok() {
+            let _ = std::fs::write(
+                ac_cfg.join("python.ini"),
+                "[SIMHUB]\r\nACTIVE=1\r\n[SIMHUB_LOG]\r\nACTIVE=0\r\n",
+            );
+            eprintln!("[stub] created Documents\\Assetto Corsa\\cfg\\python.ini");
         }
     }
 }
