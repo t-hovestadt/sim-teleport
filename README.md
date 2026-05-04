@@ -404,6 +404,7 @@ default mode to register.
 | `simhub.path` | *(default install)* | Path to `SimHubWPF.exe`. Defaults to `C:\Program Files (x86)\SimHub\SimHubWPF.exe`. |
 | `simhub.iracing` | `"iRacing"` | SimHub game code passed to `-switchgame` when iRacing telemetry starts. |
 | `simhub.ac` | `"AssettoCorsa"` | SimHub game code passed to `-switchgame` when AC/EVO/ACC telemetry starts. |
+| `simhub.ac_evo` | *(none)* | SimHub game code for AC EVO sessions specifically. If unset, uses `simhub.ac`. |
 | `simhub.relay.<id>` | *(none)* | SimHub game code for a sim-relay game. Key is the sim-relay game ID (e.g. `wreckfest2`). |
 
 The `[simhub]` section is optional. When configured (or when `SimHubWPF.exe` exists at the
@@ -507,7 +508,7 @@ shared memory maps with the same names as the game, which conflicts with the gam
 
 ## Building from source
 
-Requires Rust (stable). Windows is required for the APIs used for game detection (Named Events, shared-memory sections, ToolHelp32).
+Requires Rust (stable). Windows is required for the APIs used for game detection (shared-memory sections, ToolHelp32).
 
 ```
 git clone --recurse-submodules https://github.com/t-hovestadt/sim-bridge.git
