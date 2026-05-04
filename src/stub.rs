@@ -119,6 +119,12 @@ impl StubManager {
         let exe = std::env::current_exe().ok()?;
         let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
         std::fs::create_dir_all(&stub_dir).ok()?;
+
+        // Create the directory structure SimHub's DLL checks before activating the reader.
+        if name == "acs" {
+            setup_ac_stub_environment(&stub_dir);
+        }
+
         let stub_path = stub_dir.join(format!("{name}.exe"));
 
         // Re-copy if stub is absent or older than this binary.
@@ -150,6 +156,64 @@ impl StubManager {
         }
 
         Some(child)
+    }
+}
+
+/// Create the minimal directory structure SimHub's ACSharedMemory.dll expects to find at the
+/// acs.exe location before it will activate its shared-memory reader.
+///
+/// SimHub resolves the running acs.exe path, then checks the parent directory for:
+///   system\cfg\assetto_corsa.ini   — game config (existence check)
+///   apps\python\SimHub\            — SimHub's AC plugin (installed check)
+///   content\cars\                  — content directory (game installed check)
+///
+/// It also checks %USERPROFILE%\Documents\Assetto Corsa\cfg\python.ini for its app being
+/// enabled. We create that too if the directory doesn't already exist (won't overwrite real
+/// AC user config).
+#[cfg(windows)]
+fn setup_ac_stub_environment(stub_dir: &std::path::Path) {
+    // system\cfg\assetto_corsa.ini
+    let cfg_dir = stub_dir.join("system").join("cfg");
+    let _ = std::fs::create_dir_all(&cfg_dir);
+    let ini = cfg_dir.join("assetto_corsa.ini");
+    if !ini.exists() {
+        let _ = std::fs::write(&ini, "[SETTINGS]\r\n");
+    }
+
+    // apps\python\SimHub\ — plugin files SimHub checks for
+    let simhub_dir = stub_dir.join("apps").join("python").join("SimHub");
+    let _ = std::fs::create_dir_all(&simhub_dir);
+    let _ = std::fs::create_dir_all(simhub_dir.join("stdlib"));
+    let _ = std::fs::create_dir_all(simhub_dir.join("stdlib64"));
+    for (fname, content) in &[
+        ("SimHub.py", "# sim-bridge stub\r\n"),
+        ("simhub_shared_mem.py", "# sim-bridge stub\r\n"),
+        ("__init__.py", ""),
+    ] {
+        let path = simhub_dir.join(fname);
+        if !path.exists() {
+            let _ = std::fs::write(&path, content);
+        }
+    }
+
+    // content\cars\ — content directory
+    let _ = std::fs::create_dir_all(stub_dir.join("content").join("cars"));
+
+    // %USERPROFILE%\Documents\Assetto Corsa\cfg\python.ini — enables SimHub's app
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        let ac_cfg = std::path::PathBuf::from(profile)
+            .join("Documents")
+            .join("Assetto Corsa")
+            .join("cfg");
+        if !ac_cfg.exists() {
+            if std::fs::create_dir_all(&ac_cfg).is_ok() {
+                let _ = std::fs::write(
+                    ac_cfg.join("python.ini"),
+                    "[SIMHUB]\r\nACTIVE=1\r\n[SIMHUB_LOG]\r\nACTIVE=0\r\n",
+                );
+                eprintln!("[stub] created Documents\\Assetto Corsa\\cfg\\python.ini");
+            }
+        }
     }
 }
 
