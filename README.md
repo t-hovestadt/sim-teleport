@@ -280,14 +280,15 @@ carries a 24-byte header:
 | `source_us` | u64 | Microseconds spent on source side |
 | `sequence` | u32 | Monotonically increasing per message |
 | `payload_size` | u32 | Total compressed bytes across all fragments |
-| `buf_offset` | u32 | Page identifier: `0`=physics, `1`=graphics, `2`=static, `u32::MAX`=heartbeat |
+| `buf_offset` | u32 | Page identifier: `0`=physics, `1`=graphics, `2`=static, `u32::MAX`=heartbeat, `0xFFFFFFFE`=game announce |
 | `fragment` | u16 | 0-based index of this fragment |
 | `fragments` | u16 | Total fragment count for this sequence; `0` = heartbeat |
 
 The receiver reassembles fragments out-of-order and discards duplicates. A new sequence discards any in-progress assembly from the previous one.
 
-There is no game-type field in the protocol. The target writes every incoming page into both
-EVO and AC1 maps. This keeps the wire format stable regardless of which game is running.
+The `buf_offset = 0xFFFFFFFE` game-announce datagram carries a 1-byte payload (0 = AC1, 1 = EVO, 2 = ACC). Source sends it immediately after detecting a game and every 30 s. Target uses it to spawn the correct stub process for SimHub's `IsProcessRunning` check. Old targets that don't recognise this buf_offset value skip it via the existing `page_idx > 2` guard — fully backward-compatible.
+
+The target writes every incoming telemetry page into both EVO and AC1 maps simultaneously. SimHub reads whichever set matches its configured game; the other set sits idle.
 
 ### Page polling
 
