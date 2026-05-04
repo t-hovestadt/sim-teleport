@@ -9,6 +9,7 @@ type RelayGameCb = Arc<dyn Fn(&str, bool) + Send + Sync>;
 use crate::config::Config;
 use crate::logger::Logger;
 use crate::simhub_setup;
+use crate::stub::StubManager;
 
 // ── SimHub auto-switching ─────────────────────────────────────────────────────
 
@@ -272,6 +273,7 @@ fn spawn_relay_target(
                     high_priority: config.apps.high_priority,
                     busy_wait: config.apps.busy_wait,
                     on_game_active,
+                    port_offset: config.apps.relay_port_offset,
                 },
                 rx,
             ) {
@@ -330,12 +332,22 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let t2 = tracker.clone();
     let iracing_on_stale: DataCb = Arc::new(move || t2.deactivate());
 
+    let stub_mgr = Arc::new(Mutex::new(StubManager::new()));
+
     let t3 = tracker.clone();
     let p3 = simhub_path.clone();
     let c3 = ac_code.clone();
-    let ac_on_first: DataCb = Arc::new(move || t3.try_activate(&c3, p3.as_deref()));
+    let sm_first = stub_mgr.clone();
+    let ac_on_first: DataCb = Arc::new(move || {
+        sm_first.lock().unwrap().ensure_running_all_ac();
+        t3.try_activate(&c3, p3.as_deref());
+    });
     let t4 = tracker.clone();
-    let ac_on_stale: DataCb = Arc::new(move || t4.deactivate());
+    let sm_stale = stub_mgr.clone();
+    let ac_on_stale: DataCb = Arc::new(move || {
+        sm_stale.lock().unwrap().kill_all_ac();
+        t4.deactivate();
+    });
 
     let t5 = tracker;
     let relay_codes = config.simhub.relay.clone();

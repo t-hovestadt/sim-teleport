@@ -5,6 +5,7 @@ mod report;
 mod scanner;
 mod simhub_setup;
 mod source;
+mod stub;
 mod target;
 
 use clap::{Parser, Subcommand};
@@ -74,6 +75,9 @@ enum Cmd {
         /// Print detailed detection results each scan cycle (probe outcomes, tiebreakers, process matches).
         #[arg(long)]
         verbose: bool,
+        /// Port offset for Sim Relay forwarding (default 10000). Source sends to target:(game_port+offset).
+        #[arg(long, value_name = "N")]
+        port_offset: Option<u16>,
     },
     /// SimHub PC — starts all three telemetry receivers simultaneously.
     Target {
@@ -107,6 +111,9 @@ enum Cmd {
         /// Enable FanaLab shared-memory output.
         #[arg(long)]
         fanalab: bool,
+        /// Port offset for Sim Relay (default 10000). Target listens on (game_port+offset), forwards to game_port.
+        #[arg(long, value_name = "N")]
+        port_offset: Option<u16>,
     },
     /// Interactive setup wizard. Writes sim-bridge.toml (optional — CLI flags work without it).
     Setup,
@@ -127,6 +134,9 @@ enum Cmd {
     },
     /// Print Windows Firewall rules needed for all configured ports.
     Firewall,
+    /// Internal: sleep forever (used as named stub process for SimHub game detection).
+    #[command(hide = true)]
+    Stub,
 }
 
 fn main() {
@@ -150,6 +160,7 @@ fn main() {
                     no_ac: false,
                     no_relay: false,
                     fanalab: false,
+                    port_offset: None,
                 }
             } else {
                 Cmd::Source {
@@ -166,6 +177,7 @@ fn main() {
                     scan_interval: None,
                     drain: None,
                     verbose: false,
+                    port_offset: None,
                 }
             }
         }
@@ -185,6 +197,7 @@ fn main() {
             scan_interval,
             drain,
             verbose,
+            port_offset,
         } => run_source(
             target,
             bind,
@@ -199,6 +212,7 @@ fn main() {
             scan_interval,
             drain,
             verbose,
+            port_offset,
         ),
         Cmd::Target {
             source,
@@ -211,6 +225,7 @@ fn main() {
             no_ac,
             no_relay,
             fanalab,
+            port_offset,
         } => run_target(
             source,
             unicast,
@@ -222,12 +237,16 @@ fn main() {
             no_ac,
             no_relay,
             fanalab,
+            port_offset,
         ),
         Cmd::Setup => run_setup(),
         Cmd::Install { mode } => run_install(mode),
         Cmd::Uninstall => run_uninstall(),
         Cmd::List { verbose } => run_list(verbose),
         Cmd::Firewall => run_firewall(),
+        Cmd::Stub => loop {
+            std::thread::sleep(std::time::Duration::from_secs(3600));
+        },
     }
 }
 
@@ -246,6 +265,7 @@ fn run_source(
     scan_interval: Option<u64>,
     drain: Option<u64>,
     verbose: bool,
+    port_offset: Option<u16>,
 ) {
     let log = logger::Logger::open().unwrap_or_else(|e| {
         eprintln!("Warning: could not open log file: {e}");
@@ -297,6 +317,9 @@ fn run_source(
     if verbose {
         cfg.verbose = true;
     }
+    if let Some(o) = port_offset {
+        cfg.apps.relay_port_offset = o;
+    }
 
     let version_string = format!(
         "{VERSION} (teleport {TELEPORT_VERSION}, ac-teleport {AC_VERSION}, sim-relay {RELAY_VERSION})"
@@ -324,6 +347,7 @@ fn run_target(
     no_ac: bool,
     no_relay: bool,
     fanalab: bool,
+    port_offset: Option<u16>,
 ) {
     let log = logger::Logger::open().unwrap_or_else(|e| {
         eprintln!("Warning: could not open log file: {e}");
@@ -365,6 +389,9 @@ fn run_target(
     }
     if fanalab {
         cfg.apps.fanalab = true;
+    }
+    if let Some(o) = port_offset {
+        cfg.apps.relay_port_offset = o;
     }
 
     let (tx, rx) = mpsc::channel::<()>();
@@ -480,11 +507,13 @@ fn run_firewall() {
     let cfg = config::try_load().unwrap_or_default();
     let iracing_port = cfg.ports.iracing_teleport;
     let ac_port = cfg.ports.ac_teleport;
+    let offset = cfg.apps.relay_port_offset;
 
-    // Collect unique sim-relay ports for the target PC rule.
+    // Target PC receives sim-relay traffic on the offset ports.
+    // Games whose port + offset overflows u16 are excluded (same as the runtime skip).
     let mut relay_ports: Vec<u16> = sim_relay::games::GAMES
         .iter()
-        .map(|g| g.default_port)
+        .filter_map(|g| g.default_port.checked_add(offset))
         .collect();
     relay_ports.sort_unstable();
     relay_ports.dedup();
@@ -495,6 +524,9 @@ fn run_firewall() {
         .join(",");
 
     println!("# Run the following in PowerShell (Administrator).");
+    if offset != 0 {
+        println!("# Using port offset {offset}: sim-relay traffic arrives on game_port+{offset}.");
+    }
     println!("# Gaming PC (receives resync packets from SimHub PC):");
     println!();
     println!("New-NetFirewallRule -DisplayName \"sim-bridge source\" `");

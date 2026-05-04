@@ -100,10 +100,14 @@ New-NetFirewallRule -DisplayName "sim-bridge source" `
 ```
 
 **SimHub PC** (receives telemetry and game data from gaming PC):
+
+sim-relay traffic arrives on `game_port + 10000` (the default port offset) to avoid binding
+conflicts with SimHub. Run `sim-bridge firewall` to generate the exact rule for your config.
+
 ```powershell
 New-NetFirewallRule -DisplayName "sim-bridge target" `
     -Direction Inbound -Protocol UDP `
-    -LocalPort 5000,5001,5300,5606,9876,9999,15151,20777,23123,25555,30000,33740,34380,49003,63392 `
+    -LocalPort 5000,5001,15300,15606,19876,19999,25151,30777,33123,35555,40000,43740,44380,59003 `
     -Action Allow
 ```
 
@@ -392,6 +396,7 @@ default mode to register.
 | `apps.high_priority` | `false` | Set `HIGH_PRIORITY_CLASS` on telemetry threads. |
 | `apps.busy_wait` | `false` | Spin instead of sleeping (lower latency, higher CPU). |
 | `apps.fanalab` | `false` | Write iRacing data to FanaLab shared memory (target only). |
+| `apps.relay_port_offset` | `10000` | Port offset for Sim Relay. Target listens on `game_port + offset`; source sends to `target:(game_port + offset)`; SimHub reads the original `game_port`. Avoids binding conflict between sim-relay and SimHub on the target PC. |
 | `advanced.stale_timeout_secs` | `10` | Seconds without data before target marks telemetry as stale. |
 | `advanced.reconnect_timeout_secs` | `10` | Seconds iRacing source waits for data before reconnecting. |
 | `advanced.ac_poll_rate` | `60` | AC Teleport source poll rate (Hz). |

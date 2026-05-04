@@ -453,6 +453,7 @@ impl AppSlot {
                             scan_interval: cfg.detection.scan_interval,
                             grace_period: cfg.detection.drain_seconds,
                             include_console: false,
+                            port_offset: cfg.apps.relay_port_offset,
                         },
                         rx,
                     ) {
