@@ -9,7 +9,9 @@ use crate::maps::{MapError, SharedMap};
 use crate::platform::{
     boost_thread_priority, pin_thread_to_core, set_high_priority, HighResTimer, MmcssGuard,
 };
-use crate::protocol::{Receiver as ProtoReceiver, MAX_DATAGRAM_SIZE, PAGE_HEARTBEAT};
+use crate::protocol::{
+    Receiver as ProtoReceiver, MAX_DATAGRAM_SIZE, PAGE_GAME_ANNOUNCE, PAGE_HEARTBEAT,
+};
 use crate::stats::Stats;
 
 /// Target maps created at this size for each page regardless of the actual game struct size.
@@ -29,6 +31,7 @@ pub struct TargetArgs {
     pub stale_timeout: Duration,
     pub on_first_data: Option<Arc<dyn Fn() + Send + Sync>>,
     pub on_stale: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub on_game_announce: Option<Arc<dyn Fn(u8) + Send + Sync>>,
 }
 
 // ── Map abstractions ──────────────────────────────────────────────────────────
@@ -211,6 +214,18 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 // Heartbeat: reset stale timer, no decompression needed.
                 if buf_offset == PAGE_HEARTBEAT {
                     last_update = Instant::now();
+                    continue;
+                }
+
+                // Game announce: source tells us which AC variant is running.
+                if buf_offset == PAGE_GAME_ANNOUNCE {
+                    if let Some(bytes) = assembled {
+                        if let Some(&game_id) = bytes.first() {
+                            if let Some(cb) = &args.on_game_announce {
+                                cb(game_id);
+                            }
+                        }
+                    }
                     continue;
                 }
 

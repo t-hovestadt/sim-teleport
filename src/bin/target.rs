@@ -91,6 +91,7 @@ fn main() {
             stale_timeout: Duration::from_secs(args.stale_timeout),
             on_first_data: None,
             on_stale: None,
+            on_game_announce: None,
         },
         rx,
     ) {

@@ -7,10 +7,13 @@ use std::time::{Duration, Instant};
 use crate::game::{self, GameConfig};
 use crate::maps::{zero_named_map, MapError, SharedMap};
 use crate::platform::{boost_thread_priority, pin_thread_to_core, set_high_priority, HighResTimer};
-use crate::protocol::{Sender, PAGE_GRAPHICS, PAGE_HEARTBEAT, PAGE_PHYSICS, PAGE_STATIC};
+use crate::protocol::{
+    Sender, GAME_ID_AC1, GAME_ID_EVO, PAGE_GRAPHICS, PAGE_HEARTBEAT, PAGE_PHYSICS, PAGE_STATIC,
+};
 use crate::stats::Stats;
 
 const DETECT_INTERVAL: Duration = Duration::from_secs(2);
+const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(30);
 // Standalone only: reconnect after this long with no packetId advance (stale-map detection).
 // Not used in managed mode — sim-bridge sends the shutdown signal when the game exits.
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
@@ -89,6 +92,12 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
         let ActiveMaps { game, mut maps } = active;
 
+        let game_id: u8 = match game.id {
+            "ac1" => GAME_ID_AC1,
+            "evo" => GAME_ID_EVO,
+            _ => u8::MAX, // unknown variant — skip announce
+        };
+
         // Compression buffers sized from actual runtime map sizes (queried from the OS).
         // Using GameConfig constants here would fail: the constants may be smaller than
         // the real struct, causing compress_into to return "output is too small".
@@ -99,6 +108,12 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
         let mut sender = Sender::new();
         let mut stats = Stats::new("source");
+
+        // Announce game variant immediately so the target spawns the correct stub.
+        if game_id != u8::MAX {
+            let _ = sender.send_game_announce(game_id, |d| send_datagram!(d));
+        }
+        let mut announce_timer = Instant::now();
 
         let mut last_physics_id: i32 = 0;
         let mut last_graphics_id: i32 = 0;
@@ -219,6 +234,12 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 let source_us = tick_start.elapsed().as_micros() as u64;
                 let _ = sender.send_heartbeat(source_us, |d| send_datagram!(d));
                 heartbeat_timer = Instant::now();
+            }
+
+            // ── Periodic game-announce re-send ───────────────────────────────────
+            if game_id != u8::MAX && announce_timer.elapsed() >= ANNOUNCE_INTERVAL {
+                let _ = sender.send_game_announce(game_id, |d| send_datagram!(d));
+                announce_timer = Instant::now();
             }
 
             // ── Reconnect / game-switch detection ─────────────────────────────────

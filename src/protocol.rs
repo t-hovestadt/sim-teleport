@@ -12,6 +12,14 @@ pub const PAGE_GRAPHICS: u32 = 1;
 pub const PAGE_STATIC: u32 = 2;
 pub const PAGE_HEARTBEAT: u32 = u32::MAX;
 
+/// Control datagram: source announces which AC game variant is active.
+/// Payload = 1 byte (game_id). Old targets ignore unknown buf_offset values (page_idx > 2).
+pub const PAGE_GAME_ANNOUNCE: u32 = 0xFFFFFFFE;
+
+pub const GAME_ID_AC1: u8 = 0;
+pub const GAME_ID_EVO: u8 = 1;
+pub const GAME_ID_ACC: u8 = 2;
+
 /// Wire header prepended to every UDP datagram — 24 bytes, no padding.
 ///
 /// Layout (all little-endian):
@@ -120,6 +128,16 @@ impl Sender {
             unsafe { std::slice::from_raw_parts(&hdr as *const _ as *const u8, HEADER_SIZE) };
         buf.copy_from_slice(hdr_bytes);
         send_fn(&buf)
+    }
+
+    /// Send a single-byte game-announce datagram.
+    /// The target uses this to spawn the correct stub process (acs.exe vs assettocorsa_evo.exe).
+    pub fn send_game_announce<F>(&mut self, game_id: u8, send_fn: F) -> io::Result<()>
+    where
+        F: FnMut(&[u8]) -> io::Result<()>,
+    {
+        self.send(&[game_id], 0, PAGE_GAME_ANNOUNCE, send_fn)?;
+        Ok(())
     }
 }
 
