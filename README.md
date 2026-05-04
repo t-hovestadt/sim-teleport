@@ -223,6 +223,7 @@ Piboso titles send automatically. LFS: Options → Output → OutSim → enable,
 | `--source <IP>` | | ✓ | — | Source PC IP (informational only) |
 | `--forward-to <IP:PORT>` | | ✓ | `127.0.0.1:<game_port>` | Override forwarding destination |
 | `--busy-wait` | | ✓ | off | Spin on recv instead of sleeping (lower latency, higher CPU) |
+| `--port-offset <N>` | ✓ | ✓ | `0` | Add N to send/listen port. Source sends to `target:(game_port+N)`; target listens on `game_port+N` and forwards to `127.0.0.1:game_port`. Used by sim-bridge (offset 10000) to avoid binding conflicts with SimHub on the target PC. |
 
 ---
 
@@ -440,6 +441,12 @@ sim-relay source and SimHub cannot simultaneously receive the same game packets 
 On the target PC, sim-relay target and SimHub can share a port with `SO_REUSEADDR` if started in
 the right order (start sim-relay target first, SimHub second). Alternatively use `--forward-to`
 to point sim-relay target at a different port and configure SimHub accordingly.
+
+The cleanest solution is `--port-offset N` (applied to both source and target): source sends to
+`target:(game_port+N)` and target listens on `game_port+N`, forwarding to `127.0.0.1:game_port`
+where SimHub reads. No socket sharing, no start-order dependency. sim-bridge uses offset 10000 by
+default. Note: BeamNG OutGauge (port 63392) overflows at offset 10000 — use offset ≤ 2143 if you
+need that game.
 
 ---
 
