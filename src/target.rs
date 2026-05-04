@@ -9,7 +9,7 @@ type RelayGameCb = Arc<dyn Fn(&str, bool) + Send + Sync>;
 use crate::config::Config;
 use crate::logger::Logger;
 use crate::simhub_setup;
-use crate::stub::StubManager;
+use crate::stub::{self, StubManager};
 
 // ── SimHub auto-switching ─────────────────────────────────────────────────────
 
@@ -332,14 +332,16 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let t2 = tracker.clone();
     let iracing_on_stale: DataCb = Arc::new(move || t2.deactivate());
 
-    let stub_mgr = Arc::new(Mutex::new(StubManager::new()));
+    let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone())));
 
-    // Set up AC registry key and pre-spawn stubs so SimHub's ACManager initialises
-    // correctly before any telemetry arrives (avoids NullReferenceException on startup).
+    // Create fake install directories, Steam registry entries, and pre-spawn all AC stubs
+    // so SimHub's ACManager / ACEVOManager initialises correctly before any telemetry
+    // arrives (avoids NullReferenceException on startup).
     if config.apps.ac_teleport_enabled {
-        let mgr = stub_mgr.lock().unwrap();
-        mgr.setup_ac_registry();
-        drop(mgr);
+        let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
+        std::fs::create_dir_all(&stub_dir).ok();
+        stub::setup_all_game_environments(&stub_dir, log);
+        stub::setup_game_registry(&stub_dir, log);
         stub_mgr.lock().unwrap().ensure_running_all_ac();
     }
 

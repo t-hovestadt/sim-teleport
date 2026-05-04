@@ -478,6 +478,7 @@ impl AppSlot {
             detection.how
         ));
         self.state = SlotState::Running { handle, game };
+        self.consecutive_gone = 0;
         true
     }
 
