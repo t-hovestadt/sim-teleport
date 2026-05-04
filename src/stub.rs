@@ -189,7 +189,7 @@ pub fn setup_game_registry(stub_dir: &Path, log: &Logger) {
 
     for (app_key, display_name, subdir) in &games {
         let reg_path = format!(
-            r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{}",
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{}",
             app_key
         );
 
@@ -255,8 +255,9 @@ pub fn setup_game_registry(stub_dir: &Path, log: &Logger) {
             }
             Ok(o) => {
                 log.log(&format!(
-                    "[SimHub] Registry failed for {}: {}",
-                    display_name,
+                    "[SimHub] Registry write to HKLM requires admin — \
+                     run 'sim-bridge setup' as Administrator once to fix AC1 NullReferenceException \
+                     (error: {})",
                     String::from_utf8_lossy(&o.stderr).trim()
                 ));
             }
@@ -282,9 +283,9 @@ pub fn cleanup_game_registry(log: &Logger) {
     use std::os::windows::process::CommandExt;
 
     let keys = [
-        r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 244210",
-        r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 805550",
-        r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 3058630",
+        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 244210",
+        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 805550",
+        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 3058630",
     ];
 
     for key in &keys {
@@ -412,6 +413,13 @@ fn setup_documents_folders(log: &Logger) {
     if !evo_dir.exists() {
         std::fs::create_dir_all(&evo_dir).ok();
         log.log("[stub] Created Documents\\Assetto Corsa EVO");
+    }
+
+    // Wreckfest 2: Documents\My Games\Wreckfest 2
+    let wf2_dir = docs.join("My Games").join("Wreckfest 2");
+    if !wf2_dir.exists() {
+        std::fs::create_dir_all(&wf2_dir).ok();
+        log.log("[stub] Created Documents\\My Games\\Wreckfest 2");
     }
 }
 

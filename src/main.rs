@@ -406,7 +406,15 @@ fn run_target(
 
 fn run_setup() {
     match config::setup_wizard() {
-        Ok(_) => {}
+        Ok(cfg) => {
+            if cfg.apps.ac_teleport_enabled {
+                let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
+                std::fs::create_dir_all(&stub_dir).ok();
+                let log = logger::Logger::stderr();
+                stub::setup_all_game_environments(&stub_dir, &log);
+                stub::setup_game_registry(&stub_dir, &log);
+            }
+        }
         Err(e) => {
             eprintln!("Setup failed: {e}");
             std::process::exit(1);

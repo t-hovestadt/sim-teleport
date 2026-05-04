@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 type DataCb = Arc<dyn Fn() + Send + Sync>;
 type RelayGameCb = Arc<dyn Fn(&str, bool) + Send + Sync>;
+type AcAnnounceCb = Arc<dyn Fn(u8) + Send + Sync>;
 
 use crate::config::Config;
 use crate::logger::Logger;
@@ -82,12 +83,15 @@ impl TargetApp {
         on_first_data: Option<DataCb>,
         on_stale: Option<DataCb>,
         relay_on_game: Option<RelayGameCb>,
+        on_ac_announce: Option<AcAnnounceCb>,
     ) -> JoinHandle<()> {
         match self {
             TargetApp::IracingTeleport => {
                 spawn_teleport_target(config, rx, on_first_data, on_stale)
             }
-            TargetApp::AcTeleport => spawn_ac_target(config, rx, on_first_data, on_stale),
+            TargetApp::AcTeleport => {
+                spawn_ac_target(config, rx, on_first_data, on_stale, on_ac_announce)
+            }
             TargetApp::SimRelay => spawn_relay_target(config, rx, relay_on_game),
         }
     }
@@ -105,6 +109,7 @@ struct TargetSlot {
     on_first_data: Option<DataCb>,
     on_stale: Option<DataCb>,
     relay_on_game: Option<RelayGameCb>,
+    on_ac_announce: Option<AcAnnounceCb>,
 }
 
 impl TargetSlot {
@@ -114,6 +119,7 @@ impl TargetSlot {
         on_first_data: Option<DataCb>,
         on_stale: Option<DataCb>,
         relay_on_game: Option<RelayGameCb>,
+        on_ac_announce: Option<AcAnnounceCb>,
     ) -> Self {
         let (tx, rx) = mpsc::channel::<()>();
         let handle = app.spawn(
@@ -122,6 +128,7 @@ impl TargetSlot {
             on_first_data.clone(),
             on_stale.clone(),
             relay_on_game.clone(),
+            on_ac_announce.clone(),
         );
         Self {
             app,
@@ -133,6 +140,7 @@ impl TargetSlot {
             on_first_data,
             on_stale,
             relay_on_game,
+            on_ac_announce,
         }
     }
 
@@ -171,6 +179,7 @@ impl TargetSlot {
             self.on_first_data.clone(),
             self.on_stale.clone(),
             self.relay_on_game.clone(),
+            self.on_ac_announce.clone(),
         );
     }
 
@@ -227,6 +236,7 @@ fn spawn_ac_target(
     rx: Receiver<()>,
     on_first_data: Option<DataCb>,
     on_stale: Option<DataCb>,
+    on_game_announce: Option<AcAnnounceCb>,
 ) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("AC Teleport Target".to_string())
@@ -247,6 +257,7 @@ fn spawn_ac_target(
                     ),
                     on_first_data,
                     on_stale,
+                    on_game_announce,
                 },
                 rx,
             ) {
@@ -343,23 +354,69 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
         stub::setup_game_registry(&stub_dir, log);
     }
 
+    // game_announced: set by on_ac_announce; prevents on_first_data from overriding
+    // the correct stub when a legacy source never sends PAGE_GAME_ANNOUNCE.
+    let game_announced = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     let t3 = tracker.clone();
     let p3 = simhub_path.clone();
     let c3 = ac_code.clone();
     let sm_first = stub_mgr.clone();
+    let ga_first = game_announced.clone();
     let ac_on_first: DataCb = Arc::new(move || {
-        // Spawn AC1 stub only — ac-teleport target writes both AC1 and EVO maps
-        // simultaneously so the protocol carries no variant field. AC1 is the
-        // tested case; EVO stub spawning is deferred until variant detection is added.
-        sm_first.lock().unwrap().ensure_running("acs");
-        t3.try_activate(&c3, p3.as_deref());
+        // Fallback for legacy sources that don't send PAGE_GAME_ANNOUNCE.
+        // on_ac_announce sets game_announced=true before this fires for modern sources.
+        if !ga_first.load(std::sync::atomic::Ordering::Relaxed) {
+            sm_first.lock().unwrap().ensure_running("acs");
+            t3.try_activate(&c3, p3.as_deref());
+        }
     });
+
+    let t3a = tracker.clone();
+    let p3a = simhub_path.clone();
+    let c3a = ac_code.clone();
+    let evo_code = config.simhub.ac_evo.clone();
+    let sm_announce = stub_mgr.clone();
+    let ga_announce = game_announced.clone();
+    let ac_on_announce: AcAnnounceCb = Arc::new(move |game_id: u8| {
+        ga_announce.store(true, std::sync::atomic::Ordering::Relaxed);
+        let mut mgr = sm_announce.lock().unwrap();
+        match game_id {
+            ac_teleport::GAME_ID_AC1 => {
+                mgr.kill("assettocorsa_evo");
+                mgr.kill("acc");
+                mgr.ensure_running("acs");
+                drop(mgr);
+                t3a.try_activate(&c3a, p3a.as_deref());
+            }
+            ac_teleport::GAME_ID_EVO => {
+                mgr.kill("acs");
+                mgr.kill("acc");
+                mgr.ensure_running("assettocorsa_evo");
+                drop(mgr);
+                let code = evo_code.as_deref().unwrap_or(c3a.as_str());
+                t3a.try_activate(code, p3a.as_deref());
+            }
+            ac_teleport::GAME_ID_ACC => {
+                mgr.kill("acs");
+                mgr.kill("assettocorsa_evo");
+                mgr.ensure_running("acc");
+                // ACC SimHub code: no standard -switchgame code known — skip switch.
+            }
+            _ => {}
+        }
+    });
+
     let t4 = tracker.clone();
     let sm_stale = stub_mgr.clone();
+    let ga_stale = game_announced.clone();
     let ac_on_stale: DataCb = Arc::new(move || {
-        sm_stale.lock().unwrap().kill("acs");
-        // Kill EVO stub defensively in case it was spawned by a future code path.
-        sm_stale.lock().unwrap().kill("assettocorsa_evo");
+        ga_stale.store(false, std::sync::atomic::Ordering::Relaxed);
+        let mut mgr = sm_stale.lock().unwrap();
+        mgr.kill("acs");
+        mgr.kill("assettocorsa_evo");
+        mgr.kill("acc");
+        drop(mgr);
         t4.deactivate();
     });
 
@@ -392,6 +449,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             Some(iracing_on_first),
             Some(iracing_on_stale),
             None,
+            None,
         ));
     }
 
@@ -406,6 +464,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             Some(ac_on_first),
             Some(ac_on_stale),
             None,
+            Some(ac_on_announce),
         ));
     }
 
@@ -417,6 +476,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             None,
             None,
             Some(relay_on_game),
+            None,
         ));
     }
 
