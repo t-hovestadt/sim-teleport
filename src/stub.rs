@@ -111,6 +111,35 @@ impl StubManager {
         self.kill("acc");
     }
 
+    /// Write the Steam App 244210 registry key so SimHub's ACManager finds a valid install path.
+    /// Uses reg.exe (no winreg dependency). Idempotent — /f overwrites silently.
+    #[cfg(windows)]
+    pub fn setup_ac_registry(&self) {
+        use std::os::windows::process::CommandExt;
+        let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
+        let _ = std::fs::create_dir_all(&stub_dir);
+        let path_str = stub_dir.to_string_lossy().into_owned();
+        let key = r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 244210";
+        let _ = std::process::Command::new("reg.exe")
+            .args([
+                "add",
+                key,
+                "/v",
+                "InstallLocation",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &path_str,
+                "/f",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+        eprintln!("[stub] AC registry key set → {path_str}");
+    }
+
+    #[cfg(not(windows))]
+    pub fn setup_ac_registry(&self) {}
+
     #[cfg(windows)]
     fn spawn_stub(&self, name: &str) -> Option<std::process::Child> {
         use std::os::windows::io::AsRawHandle;
@@ -215,6 +244,18 @@ fn setup_ac_stub_environment(stub_dir: &std::path::Path) {
     }
 }
 
+/// Remove the Steam App 244210 registry key written by setup_ac_registry.
+#[cfg(windows)]
+fn cleanup_ac_registry() {
+    use std::os::windows::process::CommandExt;
+    let key = r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 244210";
+    let _ = std::process::Command::new("reg.exe")
+        .args(["delete", key, "/f"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    eprintln!("[stub] AC registry key removed");
+}
+
 impl Default for StubManager {
     fn default() -> Self {
         Self::new()
@@ -229,6 +270,7 @@ impl Drop for StubManager {
             let _ = child.wait();
             eprintln!("[stub] cleanup: killed {name}.exe");
         }
+        cleanup_ac_registry();
         // Job object handle closes here — OS kills any remaining stubs.
     }
 }

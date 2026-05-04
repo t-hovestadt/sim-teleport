@@ -323,6 +323,10 @@ struct AppSlot {
     /// Drain is only cancelled after 3 consecutive hits to filter out process flicker
     /// (acs.exe briefly reappearing in the process list during AC's shutdown sequence).
     consecutive_redetections: u32,
+    /// Consecutive scan cycles where the game process was not found while in Running state.
+    /// Drain only begins after 3 consecutive misses to absorb brief process-list blips
+    /// during AC session transitions / loading screens.
+    consecutive_gone: u32,
 }
 
 impl AppSlot {
@@ -334,6 +338,7 @@ impl AppSlot {
             failures: FailureTracker::new(),
             detached: None,
             consecutive_redetections: 0,
+            consecutive_gone: 0,
         }
     }
 
@@ -752,16 +757,25 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                 shmem.begin_drain();
             } else if let Some(game) = shmem.current_game() {
                 if !is_game_still_running(game, &mut scanner, log) {
-                    let name = game_label(Some(game));
-                    log.log(&format!("[{name}] Game process gone — stopping"));
-                    report.push_note(format!(
-                        "{} {} process gone",
-                        chrono::Local::now().format("%H:%M:%S"),
-                        name
-                    ));
-                    shmem.send_shutdown();
-                    std::thread::sleep(Duration::from_millis(500));
-                    shmem.begin_drain();
+                    shmem.consecutive_gone += 1;
+                    if shmem.consecutive_gone >= 3 {
+                        let name = game_label(Some(game));
+                        log.log(&format!(
+                            "[{name}] Game process gone ({} consecutive scans) — stopping",
+                            shmem.consecutive_gone
+                        ));
+                        report.push_note(format!(
+                            "{} {} process gone",
+                            chrono::Local::now().format("%H:%M:%S"),
+                            name
+                        ));
+                        shmem.consecutive_gone = 0;
+                        shmem.send_shutdown();
+                        std::thread::sleep(Duration::from_millis(500));
+                        shmem.begin_drain();
+                    }
+                } else {
+                    shmem.consecutive_gone = 0;
                 }
             }
         } else {
@@ -802,6 +816,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                 // Different game detected while draining — stop old, start new.
                 (SlotState::Draining { .. }, Some(d)) => {
                     shmem.consecutive_redetections = 0;
+                    shmem.consecutive_gone = 0;
                     let old_name = game_label(shmem.current_game());
                     log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
                     shmem.stop(log);
@@ -819,6 +834,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
 
                 (SlotState::Draining { .. }, None) if drain_expired => {
                     shmem.consecutive_redetections = 0;
+                    shmem.consecutive_gone = 0;
                     let name = game_label(shmem.current_game());
                     log.log(&format!("[{name}] Stopped"));
                     shmem.stop(log);

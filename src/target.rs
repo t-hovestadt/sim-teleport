@@ -334,6 +334,15 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     let stub_mgr = Arc::new(Mutex::new(StubManager::new()));
 
+    // Set up AC registry key and pre-spawn stubs so SimHub's ACManager initialises
+    // correctly before any telemetry arrives (avoids NullReferenceException on startup).
+    if config.apps.ac_teleport_enabled {
+        let mgr = stub_mgr.lock().unwrap();
+        mgr.setup_ac_registry();
+        drop(mgr);
+        stub_mgr.lock().unwrap().ensure_running_all_ac();
+    }
+
     let t3 = tracker.clone();
     let p3 = simhub_path.clone();
     let c3 = ac_code.clone();
