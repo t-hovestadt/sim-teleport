@@ -62,11 +62,16 @@ impl StubManager {
     pub fn ensure_running(&mut self, name: &str) {
         #[cfg(windows)]
         {
-            if let Some(child) = self.stubs.get_mut(name) {
-                if child.try_wait().ok().flatten().is_none() {
-                    return; // still alive
-                }
+            let is_dead = if let Some(child) = self.stubs.get_mut(name) {
+                child.try_wait().ok().flatten().is_some()
+            } else {
+                false
+            };
+            if is_dead {
                 self.stubs.remove(name);
+            }
+            if self.stubs.contains_key(name) {
+                return; // still alive
             }
             match self.spawn_stub(name) {
                 Some(child) => {
@@ -145,6 +150,12 @@ impl StubManager {
         }
 
         Some(child)
+    }
+}
+
+impl Default for StubManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
