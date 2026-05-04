@@ -185,7 +185,7 @@ fn setup_ac_stub_environment(stub_dir: &std::path::Path) {
     let _ = std::fs::create_dir_all(&simhub_dir);
     let _ = std::fs::create_dir_all(simhub_dir.join("stdlib"));
     let _ = std::fs::create_dir_all(simhub_dir.join("stdlib64"));
-    for (fname, content) in &[
+    for (fname, content) in [
         ("SimHub.py", "# sim-bridge stub\r\n"),
         ("simhub_shared_mem.py", "# sim-bridge stub\r\n"),
         ("__init__.py", ""),
