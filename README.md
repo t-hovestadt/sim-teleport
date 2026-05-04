@@ -396,7 +396,7 @@ default mode to register.
 | `apps.high_priority` | `false` | Set `HIGH_PRIORITY_CLASS` on telemetry threads. |
 | `apps.busy_wait` | `false` | Spin instead of sleeping (lower latency, higher CPU). |
 | `apps.fanalab` | `false` | Write iRacing data to FanaLab shared memory (target only). |
-| `apps.relay_port_offset` | `10000` | Port offset for Sim Relay. Target listens on `game_port + offset`; source sends to `target:(game_port + offset)`; SimHub reads the original `game_port`. Avoids binding conflict between sim-relay and SimHub on the target PC. |
+| `apps.relay_port_offset` | `10000` | Port offset for Sim Relay. Target listens on `game_port + offset`; source sends to `target:(game_port + offset)`; SimHub reads the original `game_port`. Avoids binding conflict between sim-relay and SimHub on the target PC. BeamNG OutGauge (port 63392) overflows at offset 10000 — set to ≤ 2143 to use that game. |
 | `advanced.stale_timeout_secs` | `10` | Seconds without data before target marks telemetry as stale. |
 | `advanced.reconnect_timeout_secs` | `10` | Seconds iRacing source waits for data before reconnecting. |
 | `advanced.ac_poll_rate` | `60` | AC Teleport source poll rate (Hz). |
@@ -443,6 +443,20 @@ creates the per-game PluginsData subfolder. If changes were made, the log prints
 ```
 
 Restart SimHub after this message. Subsequent runs are silent (idempotent).
+
+**Automatic process stubs and fake AC installation** — when the first AC telemetry frame arrives,
+sim-bridge target also:
+
+- Spawns background stub processes (`acs.exe`, `assettocorsa_evo.exe`, `acc.exe`) in
+  `%TEMP%\sim-bridge-stubs\`. SimHub's ACSharedMemory.dll calls `IsProcessRunning` before
+  activating its shared-memory reader; these stubs satisfy that check.
+- Creates a minimal AC installation tree alongside the stubs (`system\cfg\assetto_corsa.ini`,
+  `apps\python\SimHub\`, `content\cars\`) so SimHub's installation check passes.
+- Creates `%USERPROFILE%\Documents\Assetto Corsa\cfg\python.ini` (marks the SimHub app as active)
+  if that directory does not already exist — will not overwrite a real AC install.
+
+Stubs are killed when AC data goes stale and on clean shutdown. Windows Job Objects ensure
+cleanup even if sim-bridge crashes.
 
 If SimHub still shows no AC telemetry after restarting:
 
