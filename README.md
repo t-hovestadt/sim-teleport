@@ -199,7 +199,7 @@ Piboso titles send automatically. LFS: Options → Output → OutSim → enable,
 
 | Game | Reason |
 |------|--------|
-| **Assetto Corsa EVO** | Uses shared memory (not UDP). Planned: shared-memory forwarding like iracing-teleport. |
+| **Assetto Corsa EVO** | Uses shared memory (not UDP). Supported via [ac-teleport](https://github.com/t-hovestadt/ac-teleport) and [sim-bridge](https://github.com/t-hovestadt/sim-bridge). |
 | **Assetto Corsa (original)** | Stateful handshake UDP — the game's UDP server requires a subscribe/response protocol that cannot be transparently proxied. |
 | **Assetto Corsa Rally** | Likely shared memory (research inconclusive on UDP exposure). |
 | **Microsoft Flight Simulator 2024** | Uses SimConnect SDK (named pipe / TCP), not UDP. Requires a dedicated SimConnect relay. |
