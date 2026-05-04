@@ -107,20 +107,6 @@ impl StubManager {
         let _ = name;
     }
 
-    /// Spawn stubs for all AC variants (AC1, EVO, ACC).
-    pub fn ensure_running_all_ac(&mut self) {
-        self.ensure_running("acs");
-        self.ensure_running("assettocorsa_evo");
-        self.ensure_running("acc");
-    }
-
-    /// Kill stubs for all AC variants.
-    pub fn kill_all_ac(&mut self) {
-        self.kill("acs");
-        self.kill("assettocorsa_evo");
-        self.kill("acc");
-    }
-
     #[cfg(windows)]
     fn spawn_stub(&self, name: &str) -> Option<std::process::Child> {
         use std::os::windows::io::AsRawHandle;

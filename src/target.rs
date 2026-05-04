@@ -334,15 +334,13 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone())));
 
-    // Create fake install directories, Steam registry entries, and pre-spawn all AC stubs
-    // so SimHub's ACManager / ACEVOManager initialises correctly before any telemetry
-    // arrives (avoids NullReferenceException on startup).
+    // Create fake install directories and Steam registry entries at startup.
+    // Stub processes are spawned on demand when data arrives, not here.
     if config.apps.ac_teleport_enabled {
         let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
         std::fs::create_dir_all(&stub_dir).ok();
         stub::setup_all_game_environments(&stub_dir, log);
         stub::setup_game_registry(&stub_dir, log);
-        stub_mgr.lock().unwrap().ensure_running_all_ac();
     }
 
     let t3 = tracker.clone();
@@ -350,13 +348,18 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let c3 = ac_code.clone();
     let sm_first = stub_mgr.clone();
     let ac_on_first: DataCb = Arc::new(move || {
-        sm_first.lock().unwrap().ensure_running_all_ac();
+        // Spawn AC1 stub only — ac-teleport target writes both AC1 and EVO maps
+        // simultaneously so the protocol carries no variant field. AC1 is the
+        // tested case; EVO stub spawning is deferred until variant detection is added.
+        sm_first.lock().unwrap().ensure_running("acs");
         t3.try_activate(&c3, p3.as_deref());
     });
     let t4 = tracker.clone();
     let sm_stale = stub_mgr.clone();
     let ac_on_stale: DataCb = Arc::new(move || {
-        sm_stale.lock().unwrap().kill_all_ac();
+        sm_stale.lock().unwrap().kill("acs");
+        // Kill EVO stub defensively in case it was spawned by a future code path.
+        sm_stale.lock().unwrap().kill("assettocorsa_evo");
         t4.deactivate();
     });
 
