@@ -314,6 +314,107 @@ pub fn cleanup_game_registry(log: &Logger) {
 #[cfg(not(windows))]
 pub fn cleanup_game_registry(_log: &Logger) {}
 
+// ── Auto-elevating registry setup ─────────────────────────────────────────────
+
+/// Returns true when all three HKLM InstallLocation entries exist and point to
+/// the expected stub subdirectories. Used to short-circuit `ensure_registry_entries`.
+#[cfg(windows)]
+fn check_all_registry_ok(stub_dir: &Path) -> bool {
+    use std::os::windows::process::CommandExt;
+
+    let games = [
+        ("Steam App 244210", "assettocorsa"),
+        ("Steam App 805550", "assettocorsacompetizione"),
+        ("Steam App 3058630", "assettocorsaevo"),
+    ];
+
+    for (app_key, subdir) in &games {
+        let reg_path = format!(
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{}",
+            app_key
+        );
+        let install_str = stub_dir.join(subdir).to_string_lossy().into_owned();
+
+        let check = std::process::Command::new("reg")
+            .args(["query", &reg_path, "/v", "InstallLocation"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        match check {
+            Ok(o) if o.status.success() => {
+                if !String::from_utf8_lossy(&o.stdout).contains(&*install_str) {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// Ensure HKLM registry entries exist for all three AC games.
+///
+/// On the first call when entries are missing, attempts a direct write (succeeds when
+/// already elevated). If that fails, spawns an elevated `reg-setup` subprocess via UAC
+/// (one-time prompt). Subsequent calls are silent no-ops once all entries are present.
+#[cfg(windows)]
+pub fn ensure_registry_entries(stub_dir: &Path, log: &Logger) {
+    use std::os::windows::process::CommandExt;
+
+    if check_all_registry_ok(stub_dir) {
+        return;
+    }
+
+    // Try direct write — succeeds when the process is already elevated.
+    setup_game_registry(stub_dir, log);
+
+    if check_all_registry_ok(stub_dir) {
+        return;
+    }
+
+    // Direct write failed (access denied) — request elevation once.
+    log.log("[SimHub] Registry entries missing — requesting admin access (one-time)...");
+
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(_) => {
+            log.log("[SimHub] Could not determine exe path for elevation");
+            return;
+        }
+    };
+
+    // Escape single quotes in the path for PowerShell single-quoted string.
+    let exe_str = exe.to_string_lossy().replace('\'', "''");
+    let ps_cmd = format!("Start-Process '{exe_str}' -ArgumentList 'reg-setup' -Verb RunAs -Wait");
+
+    let result = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    match result {
+        Ok(s) if s.success() => {
+            if check_all_registry_ok(stub_dir) {
+                log.log("[SimHub] Registry entries created successfully");
+            } else {
+                log.log(
+                    "[SimHub] Registry setup may have been cancelled — \
+                     AC1 NullReferenceException may still occur in SimHub",
+                );
+            }
+        }
+        _ => {
+            log.log(
+                "[SimHub] Admin elevation failed or was declined — \
+                 AC1 NullReferenceException may still occur in SimHub",
+            );
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn ensure_registry_entries(_stub_dir: &Path, _log: &Logger) {}
+
 // ── Fake install directory structures ─────────────────────────────────────────
 
 /// Create minimal directory structures for all three AC games so SimHub's ACManager

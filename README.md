@@ -53,6 +53,10 @@ pause
 Copy `sim-bridge.exe` and the appropriate bat file to each PC. Double-click to run.
 iRacing and Assetto Corsa (EVO, AC1, ACC) work immediately via multicast — no IPs needed.
 
+**First run on the SimHub PC:** a UAC prompt ("Do you want to allow this app to make changes
+to your device?") appears once so sim-bridge can write AC game registry entries to HKLM.
+Click **Yes**. Every subsequent run is completely silent — the entries are already present.
+
 To also forward UDP relay games (F1, Forza, BeamNG, etc.), add the SimHub
 PC's IP so sim-relay knows where to send:
 
@@ -192,8 +196,11 @@ require in-game settings or config files before they send telemetry.
 
 ### Wreckfest 2
 
-Wreckfest 2 does **not** send telemetry by default. You must create a config
-file manually.
+Wreckfest 2 does **not** send telemetry by default. sim-bridge source creates
+`config.json` automatically if you have run Wreckfest 2 at least once (so the save
+directory exists). Restart the game after sim-bridge creates it.
+
+If you prefer to create it manually:
 
 1. Find your profile folder:
    ```
@@ -242,24 +249,19 @@ SimHub detects games via shared memory maps and UDP packets. On the target PC,
 no game process runs — sim-bridge creates the maps and forwards the UDP.
 sim-bridge also tells SimHub which game is active via the `-switchgame` command.
 
-### One-time setup per game
+### Automatic setup (no manual steps)
 
-**iRacing** — works automatically. SimHub reads the shared memory maps created
-by sim-bridge target.
+**iRacing** — works automatically on first data.
 
-**Assetto Corsa (AC1 / ACC / EVO)** — SimHub may show "game not configured" or
-fail to activate AC on first launch. Fix:
+**Assetto Corsa (AC1 / ACC / EVO)** — sim-bridge target automatically:
+- Writes `GameSettings.json` so SimHub skips the "game not configured" prompt
+- Creates HKLM registry entries so SimHub finds a valid AC install path (UAC prompt on first
+  run; silent thereafter)
+- Spawns stub processes (`acs.exe`, `assettocorsa_evo.exe`, `acc.exe`) when data arrives
+- Creates fake AC install directories and Documents config files
 
-1. Open SimHub on the target PC
-2. Left sidebar → find **Assetto Corsa** in the game list
-3. If it shows a warning: right-click → **Enable** (or click through any
-   configuration wizard, choosing "Configure manually" to skip the game-path scan)
-4. SimHub will now read `acpmf_physics`, `acpmf_graphics`, `acpmf_static` maps
-   when sim-bridge switches to AC
-
-Repeat for **Assetto Corsa Competizione** if you also use ACC.
-For **Assetto Corsa EVO**, check whether your SimHub version includes an EVO
-entry — it may need a SimHub update.
+If SimHub still shows no data after the first run, restart SimHub — the config changes take
+effect on the next SimHub launch.
 
 **UDP games (F1, Forza, BeamNG, Wreckfest 2, etc.)** — work automatically.
 SimHub listens on each game's UDP port and identifies the packet format.
@@ -456,6 +458,10 @@ sim-bridge target also:
 - Creates `%USERPROFILE%\Documents\Assetto Corsa\cfg\python.ini` (marks the SimHub app as active)
   if that directory does not already exist — will not overwrite a real AC install.
 
+**HKLM registry entries** are written at target startup (not on first data). On the first run,
+a UAC prompt asks for admin permission. Once created, subsequent runs are silent. If the UAC
+prompt was cancelled, re-run `sim-bridge target` — it will prompt again.
+
 Stubs are killed when AC data goes stale and on clean shutdown. Windows Job Objects ensure
 cleanup even if sim-bridge crashes.
 
@@ -492,6 +498,8 @@ If SimHub still shows nothing:
 | `[simhub] switched to ...` missing | `simhub.path` points to wrong location, or SimHubWPF.exe not found |
 | SimHub shows wrong game overlay | Game not in built-in code table; add to `[simhub.relay]` |
 | `[SimHub] Configuration updated` on every run | SimHub restoring defaults; check SimHub version |
+| AC1 NullReferenceException in SimHub | Registry entries not written — re-run `sim-bridge target` and accept the UAC prompt |
+| `[Wreckfest 2] Created telemetry config` in source log | Config written — restart Wreckfest 2 to activate telemetry |
 
 ---
 

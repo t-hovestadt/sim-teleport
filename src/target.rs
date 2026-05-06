@@ -345,13 +345,14 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone())));
 
-    // Create fake install directories and Steam registry entries at startup.
+    // Create fake install directories and HKLM registry entries at startup.
+    // Registry write auto-elevates via UAC on first run if not already admin.
     // Stub processes are spawned on demand when data arrives, not here.
     if config.apps.ac_teleport_enabled {
         let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
         std::fs::create_dir_all(&stub_dir).ok();
         stub::setup_all_game_environments(&stub_dir, log);
-        stub::setup_game_registry(&stub_dir, log);
+        stub::ensure_registry_entries(&stub_dir, log);
     }
 
     // game_announced: set by on_ac_announce; prevents on_first_data from overriding

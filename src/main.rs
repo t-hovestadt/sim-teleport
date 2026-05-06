@@ -137,6 +137,9 @@ enum Cmd {
     /// Internal: sleep forever (used as named stub process for SimHub game detection).
     #[command(hide = true)]
     Stub,
+    /// Internal: write HKLM registry entries for AC install paths (requires admin).
+    #[command(hide = true)]
+    RegSetup,
 }
 
 fn main() {
@@ -247,6 +250,7 @@ fn main() {
         Cmd::Stub => loop {
             std::thread::sleep(std::time::Duration::from_secs(3600));
         },
+        Cmd::RegSetup => run_reg_setup(),
     }
 }
 
@@ -412,7 +416,7 @@ fn run_setup() {
                 std::fs::create_dir_all(&stub_dir).ok();
                 let log = logger::Logger::stderr();
                 stub::setup_all_game_environments(&stub_dir, &log);
-                stub::setup_game_registry(&stub_dir, &log);
+                stub::ensure_registry_entries(&stub_dir, &log);
             }
         }
         Err(e) => {
@@ -420,6 +424,13 @@ fn run_setup() {
             std::process::exit(1);
         }
     }
+}
+
+fn run_reg_setup() {
+    let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
+    std::fs::create_dir_all(&stub_dir).ok();
+    let log = logger::Logger::stderr();
+    stub::setup_game_registry(&stub_dir, &log);
 }
 
 fn run_install(mode_arg: Option<String>) {
