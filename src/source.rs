@@ -299,8 +299,14 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
             // once per second so the incrementing 4-byte group (packetId) can be
             // identified by eye. Remove once the correct field offsets are known.
             if args.verbose && game.id == "evo" && diag_timer.elapsed() >= Duration::from_secs(1) {
-                println!("[acevo-diag] physics[0..64]:  {}", hex64(maps[0].as_slice()));
-                println!("[acevo-diag] graphics[0..64]: {}", hex64(maps[1].as_slice()));
+                println!(
+                    "[acevo-diag] physics[0..64]:  {}",
+                    hex64(maps[0].as_slice())
+                );
+                println!(
+                    "[acevo-diag] graphics[0..64]: {}",
+                    hex64(maps[1].as_slice())
+                );
                 diag_timer = Instant::now();
             }
 
