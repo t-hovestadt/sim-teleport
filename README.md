@@ -15,10 +15,11 @@ the game were running locally.
   └────────┬─────────┘                     └────────▲─────────┘
            │                                        │
   ┌────────▼─────────┐   UDP (raw bytes)   ┌────────┴─────────┐
-  │  sim-relay        │ ──────────────────► │  (SimHub direct) │
-  │  source           │                     │  or sim-relay     │
-  │  binds :5606      │                     │  target           │
-  └──────────────────┘                     └──────────────────┘
+  │  sim-relay        │ ──────────────────► │  sim-relay        │
+  │  source           │                     │  target           │
+  │  binds :5606      │                     │  listens :15606   │
+  └──────────────────┘                     │  forwards :5606   │
+                                            └──────────────────┘
 ```
 
 No compression, no framing, no state — raw UDP bytes in, raw UDP bytes out.
@@ -40,11 +41,9 @@ Pre-built Windows x64 binaries are on the [Releases](../../releases/latest) page
 
 | File | Machine |
 |------|---------|
-| `source-vX.X.X-windows-x86_64.exe` | Gaming PC |
-| `target-vX.X.X-windows-x86_64.exe` | SimHub PC |
-| `sim-relay-vX.X.X-windows-x86_64.exe` | Either (combined CLI: `sim-relay source` / `sim-relay target`) |
-
-Rename the downloaded files to `source.exe`, `target.exe`, and `sim-relay.exe` and place them in the same folder.
+| `source.exe` | Gaming PC |
+| `target.exe` | SimHub PC |
+| `sim-relay.exe` | Either — combined CLI (`sim-relay source` / `sim-relay target`) |
 
 ---
 
@@ -58,50 +57,70 @@ Or click **More info** on the SmartScreen dialog, then **Run anyway**.
 
 ---
 
-## Quick Start
+## Quick start
 
 **Gaming PC:**
 ```
-source.exe --target <SimHub-PC-IP>
+source.exe --target 192.168.50.2
 ```
-Scans for running game processes every 5 seconds. When it detects a supported game it binds that port and starts forwarding. When the game exits it drains for 15 seconds then releases the port. No flags needed — start it once and leave it running.
 
-**SimHub PC (optional — only needed if SimHub is on a non-default port):**
+Scans for running game processes every 5 seconds. When a supported game is
+detected it binds the port and starts forwarding. When the game exits it drains
+for 15 seconds then releases the port. No other flags needed — start once and
+leave it running.
+
+**SimHub PC (optional):**
 ```
 target.exe
 ```
+
+SimHub can often receive forwarded UDP directly from the source. `target.exe` is
+needed when you want sim-relay to forward to a non-default port or address.
 
 **List supported games:**
 ```
 sim-relay.exe list
 ```
 
-Both `source.exe` and `target.exe` are also available as subcommands of the combined `sim-relay.exe`:
-```
-sim-relay.exe source --target <IP>
-sim-relay.exe target
-```
+---
 
-**Direct Ethernet (192.168.50.1 → 192.168.50.2):** See the [Direct Ethernet setup](#direct-ethernet-setup) section.
+## Port offset and conflict avoidance
+
+When using sim-relay standalone, source sends directly to `target:(game_port)`.
+SimHub on the target listens on the same port — this usually works because SimHub
+binds first and receives each unicast packet.
+
+When using sim-bridge (the unified launcher), a `--port-offset N` (default: 10000)
+is applied to both sides:
+- Source sends to `target:(game_port + N)` — e.g., Wreckfest 2 → port 33123
+- Target listens on `game_port + N` and forwards to `127.0.0.1:game_port`
+- SimHub reads from `game_port` as usual
+
+This avoids any socket-sharing dependency between sim-relay target and SimHub.
+No start-order sensitivity; no `SO_REUSEADDR` race.
+
+**BeamNG OutGauge (port 63392)** overflows at offset 10000: 63392 + 10000 = 73392
+exceeds the valid UDP port range (65535). If you need BeamNG OutGauge, set
+`apps.relay_port_offset` to ≤ 2143 in `sim-bridge.toml`.
 
 ---
 
-## Supported Games
+## Supported games
 
-`sim-relay list` prints the full table with per-game setup notes. Games sharing a UDP port are listened to on a single socket — one port, one socket, regardless of how many games use it.
+Run `sim-relay list` for the full table with per-game setup notes.
 
-**Forza** (port 5300 — FM7, FH4, FH5 · port 9876 — FM 2023)
+### Forza
 
-| ID | Game | Port | Detection |
-|----|------|------|-----------|
-| `forza-fm7` | Forza Motorsport 7 | 5300 | `ForzaMotorsport7.exe` |
-| `forza-fh4` | Forza Horizon 4 | 5300 | `ForzaHorizon4.exe` |
-| `forza-fh5` | Forza Horizon 5 | 5300 | `ForzaHorizon5.exe` |
-| `forza-fm` | Forza Motorsport (2023) | 9876 | `ForzaMotorsport.exe` |
+| ID | Game | Port | Setup |
+|----|------|------|-------|
+| `forza-fm7` | Forza Motorsport 7 | 5300 | Settings → HUD and Gameplay → Data Out → enable, **Dash format** |
+| `forza-fh4` | Forza Horizon 4 | 5300 | Same |
+| `forza-fh5` | Forza Horizon 5 | 5300 | Same |
+| `forza-fm` | Forza Motorsport (2023) | 9876 | Same |
 
-Settings → HUD and Gameplay → Data Out → enable, **Dash format**.
+Detection: `ForzaMotorsport7.exe`, `ForzaHorizon4.exe`, `ForzaHorizon5.exe`, `ForzaMotorsport.exe`
 
-**Project CARS 2 API** (port 5606)
+### Project CARS 2 API (port 5606)
 
 | ID | Game | Detection |
 |----|------|-----------|
@@ -111,14 +130,16 @@ Settings → HUD and Gameplay → Data Out → enable, **Dash format**.
 
 Enable **UDP Frequency > 0** in game settings.
 
-**BeamNG.drive** (ports 9999, 63392)
+### BeamNG.drive
 
 | ID | Game | Port | Setup |
 |----|------|------|-------|
-| `beamng-sh` | BeamNG.drive (SimHub Mod) | 9999 | Requires the SimHub telemetry mod |
-| `beamng-outgauge` | BeamNG.drive (OutGauge) | 63392 | Options → Other → OutGauge → enable, port `63392` |
+| `beamng-sh` | BeamNG.drive (SimHub Mod) | 9999 | Install SimHub telemetry mod |
+| `beamng-outgauge` | BeamNG.drive (OutGauge) | 63392 | Options → Other → OutGauge → enable, port `63392`. **Note: port overflows at relay_port_offset 10000 — see above.** |
 
-**Codemasters / EA Sports** (port 20777 — all titles)
+Detection: `BeamNG.drive.exe` (for both)
+
+### Codemasters / EA Sports (port 20777)
 
 | ID | Game |
 |----|------|
@@ -136,13 +157,19 @@ Enable **UDP Frequency > 0** in game settings.
 | `wrc-23` | WRC 2023 |
 | `wrc-24` | WRC 2024 |
 
-Game Options → Settings → **Telemetry Settings** → UDP On, port 20777. (F1 games) or Hardware Settings → UDP (DiRT / WRC).
+Game Options → Settings → **Telemetry Settings** → UDP On, port 20777.
+Detection: `F1_25.exe`, `F1_24.exe`, …, `dirtrally2.exe`, `DIRT5.exe`, `WRC.exe`, `WRC24.exe`
 
-**Wreckfest 2** (port 23123) — `wreckfest2` — requires a config file (not automatic).
+### Wreckfest 2 (port 23123)
 
-Create the folder and file manually:
+**ID:** `wreckfest2`
 
-Path: `%USERPROFILE%\Documents\My Games\Wreckfest 2\<ProfileID>\savegame\telemetry\config.json`
+Detection: `Wreckfest2.exe`, `Wreckfest2_BE.exe` (BattlEye), `Wreckfest2_EAC.exe`
+(EasyAntiCheat), `Wreckfest2-Win64-Shipping.exe` (Unreal Engine shipping binary)
+
+Wreckfest 2 requires a config file to enable UDP telemetry:
+
+Path: `%USERPROFILE%\Documents\My Games\Wreckfest 2\<SteamID>\savegame\telemetry\config.json`
 
 ```json
 {
@@ -156,18 +183,26 @@ Path: `%USERPROFILE%\Documents\My Games\Wreckfest 2\<ProfileID>\savegame\telemet
 }
 ```
 
-`<ProfileID>` is a Steam ID number — look for the numbered folder inside `My Games\Wreckfest 2\`. Create the `telemetry` folder if it doesn't exist. Restart the game after creating the file.
+`<SteamID>` is the numbered folder inside `My Games\Wreckfest 2\`. Create the
+`telemetry` folder if it doesn't exist. Restart the game after creating the file.
 
-**Gran Turismo** (port 33740 — PS4/PS5 console, no PC process to detect)
+sim-bridge source creates this file automatically when it detects the save
+directory exists (i.e., you have run Wreckfest 2 at least once). Look for:
+```
+[Wreckfest 2] Created telemetry config — restart game to activate
+```
+
+### Gran Turismo (port 33740 — console, no PC process)
 
 | ID | Game |
 |----|------|
 | `gt7` | Gran Turismo 7 |
 | `gt-sport` | Gran Turismo Sport |
 
-Settings → enable UDP telemetry, port 33740. In auto-detect mode, pass `--include-console` to bind port 33740 (or use `--games gt7`).
+Settings → enable UDP telemetry, port 33740. No PC process to detect —
+pass `--include-console` to always bind port 33740, or use `--games gt7`.
 
-**Truck / Farm Sims** (port 25555)
+### Truck and farm sims (port 25555)
 
 | ID | Game | Detection |
 |----|------|-----------|
@@ -176,9 +211,10 @@ Settings → enable UDP telemetry, port 33740. In auto-detect mode, pass `--incl
 | `fs22` | Farming Simulator 22 | `FarmingSimulator2022Game.exe` |
 | `fs25` | Farming Simulator 25 | `FarmingSimulator2025.exe` |
 
-ETS2/ATS: install the [SCS Telemetry plugin](https://github.com/RenCloud/scs-sdk-plugin). FS22/FS25: install the SimHub telemetry mod.
+ETS2/ATS: install the [SCS Telemetry plugin](https://github.com/RenCloud/scs-sdk-plugin).
+FS22/FS25: install the SimHub telemetry mod.
 
-**Piboso / Live for Speed** (port 30000)
+### Piboso / Live for Speed (port 30000)
 
 | ID | Game | Detection |
 |----|------|-----------|
@@ -189,20 +225,21 @@ ETS2/ATS: install the [SCS Telemetry plugin](https://github.com/RenCloud/scs-sdk
 
 Piboso titles send automatically. LFS: Options → Output → OutSim → enable, port 30000.
 
-**DCS World** (port 34380) — `dcs` — requires a DCS export script.
+### Other
 
-**X-Plane 11/12** (port 49003) — `xplane` — Settings → Data Output → Network via UDP, port 49003.
+| ID | Game | Port | Detection | Setup |
+|----|------|------|-----------|-------|
+| `dcs` | DCS World | 34380 | `DCS.exe` | Requires DCS export script |
+| `xplane` | X-Plane 11/12 | 49003 | `X-Plane.exe` | Settings → Data Output → Network via UDP, port 49003 |
+| `nolimits2` | NoLimits 2 | 15151 | `NoLimits2.exe` | Telemetry sent automatically |
 
-**NoLimits 2** (port 15151) — `nolimits2` — telemetry sent automatically.
-
-### Not Supported
+### Not supported
 
 | Game | Reason |
 |------|--------|
-| **Assetto Corsa EVO** | Uses shared memory (not UDP). Supported via [ac-teleport](https://github.com/t-hovestadt/ac-teleport) and [sim-bridge](https://github.com/t-hovestadt/sim-bridge). |
-| **Assetto Corsa (original)** | Stateful handshake UDP — the game's UDP server requires a subscribe/response protocol that cannot be transparently proxied. |
-| **Assetto Corsa Rally** | Likely shared memory (research inconclusive on UDP exposure). |
-| **Microsoft Flight Simulator 2024** | Uses SimConnect SDK (named pipe / TCP), not UDP. Requires a dedicated SimConnect relay. |
+| **Assetto Corsa EVO** | Shared memory (not UDP). Use [ac-teleport](https://github.com/t-hovestadt/ac-teleport). |
+| **Assetto Corsa (original)** | Stateful handshake UDP — requires subscribe/response protocol, not transparently proxyable. |
+| **Microsoft Flight Simulator 2024** | SimConnect SDK (named pipe / TCP), not UDP. |
 
 ---
 
@@ -210,114 +247,152 @@ Piboso titles send automatically. LFS: Options → Output → OutSim → enable,
 
 | Flag | source | target | Default | Description |
 |------|:------:|:------:|---------|-------------|
-| `--target <IP>` | ✓ | | — | **Required for source.** Target PC IP address |
-| `--games <id,...>` | ✓ | ✓ | (auto) | Comma-separated game IDs to forward/receive |
-| `--all` | ✓ | ✓ | off | Bind all ports immediately, skip process detection |
-| `--force-bind` | ✓ | | off | Alias for `--all` |
-| `--scan-interval <SECS>` | ✓ | | `5` | How often to scan for game processes |
-| `--grace-period <SECS>` | ✓ | | `15` | How long to keep forwarding after a game exits |
-| `--include-console` | ✓ | | off | Include GT7/GT Sport in auto-detect (no PC process; always bind) |
-| `--local-forward` | ✓ | | off | Also forward to `localhost:<port+1000>` for a local SimHub instance |
-| `--bind <IP>` | ✓ | | `0.0.0.0` | Bind address for listen sockets |
-| `--high-priority` | ✓ | ✓ | off | Raise process to `HIGH_PRIORITY_CLASS` for lower scheduling jitter |
-| `--source <IP>` | | ✓ | — | Source PC IP (informational only) |
-| `--forward-to <IP:PORT>` | | ✓ | `127.0.0.1:<game_port>` | Override forwarding destination |
-| `--busy-wait` | | ✓ | off | Spin on recv instead of sleeping (lower latency, higher CPU) |
-| `--port-offset <N>` | ✓ | ✓ | `0` | Add N to send/listen port. Source sends to `target:(game_port+N)`; target listens on `game_port+N` and forwards to `127.0.0.1:game_port`. Used by sim-bridge (offset 10000) to avoid binding conflicts with SimHub on the target PC. |
+| `--target <IP>` | ✓ | | — | **Required for source.** Target PC IP address. |
+| `--games <id,...>` | ✓ | ✓ | *(auto)* | Comma-separated game IDs to forward/receive. |
+| `--all` | ✓ | ✓ | off | Bind all ports at startup; skip process detection. Alias: `--force-bind`. |
+| `--force-bind` | ✓ | | off | Alias for `--all`. |
+| `--scan-interval <SECS>` | ✓ | | `5` | How often to scan for game processes. |
+| `--grace-period <SECS>` | ✓ | | `15` | How long to keep forwarding after game exits. |
+| `--include-console` | ✓ | | off | Include GT7/GT Sport in auto-detect (no PC process — always bind). |
+| `--local-forward` | ✓ | | off | Also forward to `localhost:<port+1000>` for a local SimHub instance. |
+| `--bind <IP>` | ✓ | | `0.0.0.0` | Bind address for listen sockets. |
+| `--high-priority` | ✓ | ✓ | off | `HIGH_PRIORITY_CLASS` for lower scheduling jitter. |
+| `--source <IP>` | | ✓ | — | Source PC IP (informational only, for logging). |
+| `--forward-to <IP:PORT>` | | ✓ | `127.0.0.1:<game_port>` | Override forwarding destination. |
+| `--busy-wait` | | ✓ | off | Spin on recv instead of sleeping (lower latency, higher CPU). |
+| `--port-offset <N>` | ✓ | ✓ | `0` | Add N to send/listen port. Source sends to `target:(game_port+N)`; target listens on `game_port+N` and forwards to `127.0.0.1:game_port`. Used by sim-bridge (offset 10000) to avoid binding conflicts. |
 
 ---
 
-## How It Works
+## Auto-detection (default)
 
-- **source** (auto-detect mode, default) scans for running game processes every 5 seconds and binds a port only when that game is running. With `--all` it binds all ports at startup. Packets are read in a non-blocking drain loop and re-transmitted raw to the target PC — SimHub receives the same bytes the game sent.
-- **target** (optional) listens on all game ports and forwards to `127.0.0.1:<port>` so SimHub on the target PC receives packets on the expected port. A separate forwarding socket prevents loopback self-receive. Most users don't need `target.exe` — SimHub can receive UDP from source directly.
-- **Drain loop**: both source and target drain all queued packets from each socket per iteration. When any relay is active the loop sleeps 100 µs; when all are idle it sleeps 100 ms (near-zero idle CPU).
+Auto-detection is the default. No flags needed beyond `--target`:
 
-Both tools print a stats line every 5 s and a summary on Ctrl-C:
+```
+source.exe --target 192.168.50.2
+```
 
+Every 5 seconds (configurable with `--scan-interval`), sim-relay takes a single
+Windows process snapshot and checks which games are running. When detected:
+```
+[F1 25] detected — binding port 20777
+```
+
+When the game exits, forwarding continues for 15 seconds (grace period) then:
+```
+[F1 25] drain expired — unbound port 20777
+```
+
+State machine per game:
+
+```
+Idle ──(detected)──► Active ──(exits)──► Draining ──(grace expires)──► Idle
+                                              │
+                                        (game returns)
+                                              │
+                                              ▼
+                                            Active
+```
+
+**One active game at a time** in auto-detect mode. If two games are running
+simultaneously, the one appearing first in the game registry wins. The second
+activates only after the first finishes its drain and returns to Idle.
+
+**Console games** (GT7, Gran Turismo Sport): no PC process to detect. Skip by
+default; pass `--include-console` to always bind port 33740.
+
+**Skip detection entirely:** `--all` binds all ports at startup:
+```
+source.exe --target 192.168.50.2 --all
+```
+
+Process detection is Windows-only. On other platforms auto-detect prints a
+warning; use `--all`.
+
+---
+
+## How it works
+
+**Source** (auto-detect mode): scans for game processes every 5 seconds. When a
+game is detected, binds that port with `SO_REUSEADDR` and starts a non-blocking
+drain loop reading all queued packets and re-transmitting them raw to the target.
+
+When active, the loop sleeps 100 µs between iterations. When all relays are idle,
+it sleeps 100 ms — near-zero idle CPU.
+
+**Target** (optional): listens on `game_port + offset` and forwards raw bytes to
+`127.0.0.1:game_port`. A separate forwarding socket prevents loopback self-receive.
+
+**No-packets warning**: if a relay is active (game detected) but no packets arrive
+for 15 seconds, a warning is logged. This usually means the game's telemetry setting
+is disabled or set to the wrong IP/port.
+
+Stats line every 5 seconds (active relays only):
 ```
 [Project Cars 2 / Automobilista 2]  60.1 pkt/s   72.5 KB/s   avg 1205 b/pkt   3 µs fwd
 ```
-
-Only active relays (with packets flowing) produce output — idle games are silent.
-The `µs fwd` figure is the average time to forward each packet (socket send latency only).
+The `3 µs fwd` figure is the socket send latency only (not including network transit).
 
 ---
 
-## Compatible Apps
+## Compatible apps
 
-Any app that reads SimHub-compatible UDP telemetry works on the target machine — packets
-arrive on the same port the game would normally send to.
+Any app that reads the expected UDP port works on the target machine — packets
+arrive on the same port the game normally sends to.
 
 - [SimHub](https://www.simhubdash.com) — dashboards, overlays, haptics, LED control
 - [RaceLab](https://racelab.app) — modern overlay suite
 - [iOverlay](https://ioverlay.app) — standings and timing overlays
-- [Z1 Dashboard](https://www.z1racetech.com) — live telemetry display and lap analysis
+- [Z1 Dashboard](https://www.z1racetech.com) — live telemetry and lap analysis
 
 ---
 
-## Building from Source
+## Port conflict notes
 
-Requires [Rust](https://rustup.rs) (stable).
+sim-relay source binds game ports with `SO_REUSEADDR`. On Windows, when two sockets
+are bound to the same UDP port, only one receives each unicast packet (last-bound
+wins). This means sim-relay source and a local SimHub cannot simultaneously receive
+the same game packets.
 
+**Option A — `--local-forward`**: sim-relay source also forwards to
+`localhost:<port+1000>`. Configure local SimHub to listen on that offset port.
 ```
-git clone https://github.com/t-hovestadt/sim-relay
-cd sim-relay
-cargo build --release
-```
-
-Binary is written to `target/release/sim-relay.exe` (Windows) or `target/release/sim-relay`.
-
-**Cross-compiling for Windows from macOS:**
-
-```
-rustup target add x86_64-pc-windows-gnu
-brew install mingw-w64
-cargo build --release --target x86_64-pc-windows-gnu
+source.exe --target 192.168.50.2 --local-forward
 ```
 
-> If your working directory path contains spaces, set `CARGO_TARGET_DIR` to a path without
-> spaces — the `mingw-w64` linker doesn't handle quoted paths.
+**Option B — `--port-offset N` (recommended with sim-bridge)**: no socket sharing.
+Source sends to `target:(port+N)`, target forwards to `localhost:port`. SimHub
+reads from `port` as usual. Start order doesn't matter.
+
+**Option C — SimHub only on the target PC.** Cleanest setup.
 
 ---
 
-## Direct Ethernet Setup
-
-A direct Ethernet cable between the two PCs (no router, no switch) gives the lowest
-possible latency. You need:
-
-- A network adapter on each PC (PCIe/M.2 cards work well; USB adapters also work)
-- A Cat 5e or better Ethernet cable
-- Static IP addresses (Windows won't auto-assign usable IPs on a direct link)
+## Direct Ethernet setup
 
 **1. Assign static IPs**
-
-On each PC, set a static IP on the direct-link adapter:
 
 | PC | IP | Subnet |
 |----|-----|--------|
 | Gaming PC | `192.168.50.1` | `255.255.255.0` |
 | SimHub PC | `192.168.50.2` | `255.255.255.0` |
 
-In Windows: *Network & Internet → Change adapter options → right-click adapter → Properties → IPv4 → Use the following IP address*. Leave gateway and DNS blank.
+In Windows: *Network & Internet → Change adapter options → right-click adapter →
+Properties → IPv4 → Use the following IP address*. Leave gateway and DNS blank.
 
-**2. Firewall rules (SimHub PC)**
-
-Add an inbound UDP rule for the game ports on the **SimHub PC**:
+**2. Firewall rules (SimHub PC)** — run as Administrator:
 
 ```powershell
-# Run as Administrator
 New-NetFirewallRule -DisplayName "Sim Relay" -Direction Inbound -Protocol UDP `
-    -LocalPort 5300,5606,9876,9999,15151,20777,23123,25555,30000,33740,34380,49003,63392 -Action Allow
+    -LocalPort 5300,5606,9876,9999,15151,20777,23123,25555,30000,33740,34380,49003,63392 `
+    -Action Allow
 ```
 
-Or via *Windows Defender Firewall → Advanced Settings → Inbound Rules → New Rule → Port → UDP → enter the ports above → Allow*.
+When using sim-bridge with the default port offset of 10000, add 10000 to each port
+(e.g., 33123 for Wreckfest 2, not 23123). Run `sim-bridge firewall` for the
+exact combined list.
 
 **3. NIC settings (both PCs)**
-
-In Device Manager → Network Adapters → right-click the direct-link adapter → Properties, apply these settings on **both** machines:
-
-**Advanced tab:**
 
 | Setting | Value |
 |---------|-------|
@@ -328,16 +403,12 @@ In Device Manager → Network Adapters → right-click the direct-link adapter �
 | Auto MDI/MDIX | Auto |
 | Speed & Duplex | 1.0 Gbps Full Duplex |
 
-**Power Management tab:**
-- Uncheck **"Allow the computer to turn off this device to save power"**
-- Uncheck **"Allow this device to wake the computer"**
-
-Setting names vary by NIC manufacturer — look for equivalents if the exact names differ.
+Power Management: uncheck "Allow the computer to turn off this device" and
+"Allow this device to wake the computer."
 
 **4. Bat files**
 
-`start-source.bat` on the **gaming PC** — place it next to `source.exe`:
-
+`start-source.bat` on the **gaming PC**:
 ```batch
 @echo off
 cd /d "%~dp0"
@@ -345,8 +416,7 @@ source.exe --target 192.168.50.2
 pause
 ```
 
-`start-target.bat` on the **SimHub PC** — place it next to `target.exe`:
-
+`start-target.bat` on the **SimHub PC**:
 ```batch
 @echo off
 cd /d "%~dp0"
@@ -354,99 +424,76 @@ target.exe
 pause
 ```
 
-Both bat files are included in the release download. Edit `start-source.bat` to replace `192.168.50.2` with your SimHub PC's IP address.
-
 **Troubleshooting**
 
-*Adapter shows Disconnected despite cable plugged in:* Wake-on-LAN or PCIe ASPM can leave
-the NIC in a state a warm reboot doesn't clear. Do a full **Shut down** (not Restart), wait
-30–60 seconds for capacitors to drain, then power on. Disable Wake-on-LAN in the NIC settings
-above and in BIOS (look for "Wake on LAN" or "PCIe ASPM").
+*Adapter shows Disconnected:* Full Shut down (not Restart), wait 30–60 s, power on.
+Disable Wake-on-LAN in NIC settings and BIOS.
 
-*Link won't establish between two NICs:* Some NIC brands fail auto-negotiation on a direct
-connection. The Speed & Duplex setting above (1.0 Gbps Full Duplex) fixes this. Also confirm
-**Auto MDI/MDIX** is set to Auto — if disabled, a straight-through cable won't link without a
-crossover cable.
+*Link won't establish:* Set Speed & Duplex to 1.0 Gbps Full Duplex; confirm Auto
+MDI/MDIX is Auto.
 
-*Can't set static IP via PowerShell (`element not found`):* Plug the cable in first so the
-adapter shows a link, then set the IP. If the error is `already exists`, the IP may already be
-configured — check with `Get-NetIPAddress`. To reset: `Remove-NetIPAddress -InterfaceIndex <N> -Confirm:$false`.
+*Can't set static IP:* Plug cable in first. To reset:
+`Remove-NetIPAddress -InterfaceIndex <N> -Confirm:$false`.
 
 ---
 
-## Running Alongside Local SimHub (Source PC)
+## Running alongside local SimHub (source PC)
 
-If SimHub is also installed on the gaming PC, it normally binds the same UDP port as the game.
-When sim-relay source binds that port with `SO_REUSEADDR`, only one of them receives each packet
-(Windows delivers UDP unicast to the most recently bound socket).
-
-**Option A — Use `--local-forward`:**
-
-sim-relay source also forwards each packet to `localhost:<port+1000>`. Configure SimHub on the
-source PC to listen on that offset port (e.g. pcars2 → 6606 instead of 5606).
-
-```
-source.exe --target 192.168.50.2 --local-forward
-```
-
-**Option B — Run SimHub only on the target PC.** Cleanest setup.
+If SimHub is also on the gaming PC, see [Port conflict notes](#port-conflict-notes).
+The cleanest approach is `--port-offset` with sim-bridge, or run SimHub only
+on the target PC.
 
 ---
 
-## Auto-Detection
+## Building from source
 
-Auto-detection is the **default** in v0.1.4. No flags needed:
-
-```
-source.exe --target 192.168.50.2
-```
-
-**How it works:**
-- Every 5 seconds (configurable with `--scan-interval`) sim-relay takes a single Windows process snapshot and checks which games are running.
-- When a game process is detected, the corresponding UDP port is bound and forwarding starts. You'll see `[F1 25] detected — binding port 20777`.
-- When the game process exits, forwarding continues for a 15-second grace period (configurable with `--grace-period`) to flush any last packets. Then the port is released. You'll see `[F1 25] drain expired — unbound port 20777`.
-- If a game restarts while the grace period is still running, the relay resumes immediately without waiting.
-
-**State transitions:**
+Requires [Rust](https://rustup.rs) (stable).
 
 ```
-Idle ──(game detected)──► Active ──(game exits)──► Draining ──(grace expires)──► Idle
-                                                        │
-                                                  (game returns)
-                                                        │
-                                                        ▼
-                                                      Active
+git clone https://github.com/t-hovestadt/sim-relay
+cd sim-relay
+cargo build --release
 ```
 
-**One active game at a time:** In auto-detect mode only one relay is active at a time. If two games are running simultaneously, the one that appears first in the game list takes priority. A second game activates only after the first finishes its grace period and returns to Idle.
+Cross-compile for Windows from macOS:
 
-**Console games (GT7, Gran Turismo Sport):** These run on a PS4/PS5 — there is no Windows process to detect. In auto-detect mode they are skipped by default. Pass `--include-console` to always bind port 33740.
-
-**Skip detection entirely:** Use `--all` to bind all 13 ports at startup (the v0.1.3 behavior):
 ```
-source.exe --target 192.168.50.2 --all
+rustup target add x86_64-pc-windows-gnu
+brew install mingw-w64
+cargo build --release --target x86_64-pc-windows-gnu
 ```
 
-Process detection is Windows-only. On other platforms auto-detect mode prints a warning and you should use `--all`.
+If your working directory path contains spaces, set `CARGO_TARGET_DIR` to a
+path without spaces — the `mingw-w64` linker doesn't handle quoted paths.
 
 ---
 
-## Port Conflict Notes
+## Library API
 
-sim-relay source binds game ports with `SO_REUSEADDR`. On Windows, when two sockets are bound to
-the same UDP port, only one receives each unicast packet (generally last-bound wins). This means
-sim-relay source and SimHub cannot simultaneously receive the same game packets — use
-`--local-forward` if you need both.
+sim-relay is a library crate (`sim-relay = { path = "…" }`). The public API
+surface used by sim-bridge:
 
-On the target PC, sim-relay target and SimHub can share a port with `SO_REUSEADDR` if started in
-the right order (start sim-relay target first, SimHub second). Alternatively use `--forward-to`
-to point sim-relay target at a different port and configure SimHub accordingly.
+```rust
+// Target args
+pub struct TargetArgs {
+    pub source: Option<String>,           // Source PC IP (informational)
+    pub games: Option<Vec<String>>,       // Game IDs to forward; None = all
+    pub all: bool,                        // Bind all ports at startup
+    pub forward_to: Option<String>,       // Override destination
+    pub high_priority: bool,
+    pub busy_wait: bool,
+    pub on_game_active: Option<Arc<dyn Fn(&str, bool) + Send + Sync>>,
+    pub port_offset: u16,                 // Add to listen port
+}
 
-The cleanest solution is `--port-offset N` (applied to both source and target): source sends to
-`target:(game_port+N)` and target listens on `game_port+N`, forwarding to `127.0.0.1:game_port`
-where SimHub reads. No socket sharing, no start-order dependency. sim-bridge uses offset 10000 by
-default. Note: BeamNG OutGauge (port 63392) overflows at offset 10000 — use offset ≤ 2143 if you
-need that game.
+pub mod target {
+    pub fn run(args: TargetArgs, shutdown: Receiver<()>) -> anyhow::Result<()>;
+}
+```
+
+`on_game_active(game_id, is_active)` fires when a game becomes active (first packet
+received after a period of silence) or inactive (no packets for a timeout). sim-bridge
+uses this to call `SimHubWPF.exe -switchgame` with the correct SimHub code.
 
 ---
 
