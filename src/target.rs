@@ -351,7 +351,8 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     // FindProcessPath must resolve to the same directory the appmanifest points to.
     // Stub processes are spawned on demand when data arrives, not here.
     let mut created_acf: Vec<std::path::PathBuf> = Vec::new();
-    let mut steam_common_dir: Option<std::path::PathBuf> = None;
+    let mut game_dirs: std::collections::HashMap<String, std::path::PathBuf> =
+        std::collections::HashMap::new();
     let setup_notes: RefCell<Vec<String>> = RefCell::new(Vec::new());
     if config.apps.ac_teleport_enabled {
         let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
@@ -361,17 +362,20 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             log.log(s);
             setup_notes.borrow_mut().push(s.to_string());
         });
-        steam_common_dir = steam_libs
-            .first()
-            .map(|l| l.join("steamapps").join("common"));
         created_acf = steam::ensure_ac_appmanifests(&steam_libs, &stub_dir, &|s| {
             log.log(s);
             setup_notes.borrow_mut().push(s.to_string());
         });
+        game_dirs = steam::resolve_game_dirs(&steam_libs);
+        for (name, dir) in &game_dirs {
+            let msg = format!("[steam] stub dir: {name} → {}", dir.display());
+            log.log(&msg);
+            setup_notes.borrow_mut().push(msg);
+        }
     }
     crate::report::write_target_setup_report(&setup_notes.into_inner(), log);
 
-    let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone(), steam_common_dir)));
+    let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone(), game_dirs)));
 
     // game_announced: set by on_ac_announce; prevents on_first_data from overriding
     // the correct stub when a legacy source never sends PAGE_GAME_ANNOUNCE.

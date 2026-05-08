@@ -5,6 +5,7 @@
 //! SimHub's ACManager finds a valid install path and does not throw
 //! NullReferenceException.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 // ── Game table ────────────────────────────────────────────────────────────────
@@ -156,6 +157,65 @@ fn parse_library_folders(vdf: &Path) -> Vec<PathBuf> {
         }
     }
     paths
+}
+
+/// Read the `installdir` value from an appmanifest ACF file.
+#[cfg(windows)]
+fn parse_install_dir(acf_path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(acf_path).ok()?;
+    for line in content.lines() {
+        if let Some(v) = kv_value(line, "installdir") {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
+/// For each AC game, resolve the actual install directory by reading `installdir`
+/// from whichever appmanifest ACF is present (real or stub-written). Returns a map
+/// from stub process name ("acs", "acc", "assettocorsa_evo") to the full path of
+/// the game directory under `steamapps\common\`.
+///
+/// Call this **after** `ensure_ac_appmanifests` so that stub-written ACFs are readable.
+pub fn resolve_game_dirs(libraries: &[PathBuf]) -> HashMap<String, PathBuf> {
+    #[cfg(windows)]
+    {
+        const STUB_NAMES: &[(&str, u32)] = &[
+            ("acs", 244210),
+            ("acc", 805550),
+            ("assettocorsa_evo", 3058630),
+        ];
+        let mut result = HashMap::new();
+        'game: for &(stub_name, appid) in STUB_NAMES {
+            let game = match AC_GAMES.iter().find(|g| g.appid == appid) {
+                Some(g) => g,
+                None => continue,
+            };
+            for lib in libraries {
+                let steamapps = lib.join("steamapps");
+                if !steamapps.exists() {
+                    continue;
+                }
+                let acf_path = steamapps.join(format!("appmanifest_{appid}.acf"));
+                if !acf_path.exists() {
+                    continue;
+                }
+                let installdir =
+                    parse_install_dir(&acf_path).unwrap_or_else(|| game.install_dir.to_string());
+                result.insert(
+                    stub_name.to_string(),
+                    steamapps.join("common").join(installdir),
+                );
+                continue 'game;
+            }
+        }
+        result
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = libraries;
+        HashMap::new()
+    }
 }
 
 // ── ACF helpers ───────────────────────────────────────────────────────────────

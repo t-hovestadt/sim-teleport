@@ -39,19 +39,22 @@ pub struct StubManager {
     stubs: HashMap<String, std::process::Child>,
     #[cfg(windows)]
     job: HANDLE,
-    /// When set, stub exes are placed in Steam's common directory so that
-    /// FindProcessPath matches the path the appmanifest ACF points to.
+    /// Per-game install directories read from appmanifest ACFs so that
+    /// FindProcessPath matches the path the ACF's installdir field points to.
     #[cfg(windows)]
-    steam_common_dir: Option<std::path::PathBuf>,
+    game_dirs: std::collections::HashMap<String, std::path::PathBuf>,
     #[cfg(windows)]
     log: Logger,
 }
 
 impl StubManager {
-    /// `steam_common_dir` — the `steamapps\common\` directory of the first Steam
-    /// library, or `None` when Steam is not installed. Pass `None` to fall back to
-    /// the legacy `%TEMP%\sim-bridge-stubs\` placement.
-    pub fn new(log: Logger, steam_common_dir: Option<std::path::PathBuf>) -> Self {
+    /// `game_dirs` — map from stub name ("acs", "acc", "assettocorsa_evo") to the
+    /// actual game install directory read from the appmanifest ACF. Pass an empty map
+    /// to fall back to `%TEMP%\sim-bridge-stubs\` placement.
+    pub fn new(
+        log: Logger,
+        game_dirs: std::collections::HashMap<String, std::path::PathBuf>,
+    ) -> Self {
         #[cfg(windows)]
         {
             let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
@@ -70,13 +73,13 @@ impl StubManager {
             Self {
                 stubs: HashMap::new(),
                 job,
-                steam_common_dir,
+                game_dirs,
                 log,
             }
         }
         #[cfg(not(windows))]
         {
-            let _ = (log, steam_common_dir);
+            let _ = (log, game_dirs);
             Self {}
         }
     }
@@ -137,14 +140,13 @@ impl StubManager {
             other => (other, format!("{other}.exe")),
         };
 
-        // Prefer the Steam common directory; fall back to %TEMP% when Steam is absent.
-        let game_dir = if let Some(common) = &self.steam_common_dir {
-            common.join(game_subdir)
-        } else {
+        // Prefer the directory from the appmanifest ACF; fall back to %TEMP% when
+        // Steam is absent or the game has no ACF entry.
+        let game_dir = self.game_dirs.get(name).cloned().unwrap_or_else(|| {
             std::env::temp_dir()
                 .join("sim-bridge-stubs")
                 .join(game_subdir)
-        };
+        });
         std::fs::create_dir_all(&game_dir).ok()?;
 
         let stub_path = game_dir.join(&exe_name);
