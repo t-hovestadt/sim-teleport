@@ -5,10 +5,12 @@
 //! populated the maps. Spawning a copy of sim-bridge.exe named acs.exe / acc.exe /
 //! assettocorsa_evo.exe satisfies the check.
 //!
-//! Each stub is placed inside its game's fake install directory so SimHub's FindProcessPath →
-//! GetDirectoryName resolves to the same directory that setup_game_registry points to. This
-//! ensures ACManager.GetInstallPath() returns a non-null value and does not throw
-//! NullReferenceException on every poll.
+//! When Steam libraries are found, stubs are placed inside the Steam common directories that
+//! the appmanifest ACF files point to (e.g. steamapps\common\assettocorsa\acs.exe). This
+//! ensures SimHub's FindProcessPath → GetDirectoryName resolves to the same path that Steam's
+//! ACManager reads from the appmanifest — preventing NullReferenceException.
+//!
+//! Falls back to %TEMP%\sim-bridge-stubs\{game}\ when Steam is not found.
 //!
 //! A Windows Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE ensures stubs are killed
 //! even if sim-bridge crashes (handles are closed by the OS on process termination).
@@ -37,11 +39,18 @@ pub struct StubManager {
     stubs: HashMap<String, std::process::Child>,
     #[cfg(windows)]
     job: HANDLE,
+    /// When set, stub exes are placed in Steam's common directory so that
+    /// FindProcessPath matches the path the appmanifest ACF points to.
+    #[cfg(windows)]
+    steam_common_dir: Option<std::path::PathBuf>,
     log: Logger,
 }
 
 impl StubManager {
-    pub fn new(log: Logger) -> Self {
+    /// `steam_common_dir` — the `steamapps\common\` directory of the first Steam
+    /// library, or `None` when Steam is not installed. Pass `None` to fall back to
+    /// the legacy `%TEMP%\sim-bridge-stubs\` placement.
+    pub fn new(log: Logger, steam_common_dir: Option<std::path::PathBuf>) -> Self {
         #[cfg(windows)]
         {
             let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
@@ -60,11 +69,15 @@ impl StubManager {
             Self {
                 stubs: HashMap::new(),
                 job,
+                steam_common_dir,
                 log,
             }
         }
         #[cfg(not(windows))]
-        Self { log }
+        {
+            let _ = steam_common_dir;
+            Self { log }
+        }
     }
 
     /// Ensure a stub process with the given name is running. No-op if already alive.
@@ -113,17 +126,24 @@ impl StubManager {
         use std::os::windows::process::CommandExt;
 
         let exe = std::env::current_exe().ok()?;
-        let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
 
-        // Place each stub in its game-specific install directory so SimHub's
-        // FindProcessPath → GetDirectoryName resolves to the correct install root.
+        // Subdirectory and exe names must match the installdir values in the Steam
+        // appmanifest ACF files so FindProcessPath resolves to the same path.
         let (game_subdir, exe_name): (&str, String) = match name {
             "acs" => ("assettocorsa", "acs.exe".to_string()),
             "acc" => ("assettocorsacompetizione", "acc.exe".to_string()),
-            "assettocorsa_evo" => ("assettocorsaevo", "assettocorsa_evo.exe".to_string()),
+            "assettocorsa_evo" => ("assettocorsa_evo", "assettocorsa_evo.exe".to_string()),
             other => (other, format!("{other}.exe")),
         };
-        let game_dir = stub_dir.join(game_subdir);
+
+        // Prefer the Steam common directory; fall back to %TEMP% when Steam is absent.
+        let game_dir = if let Some(common) = &self.steam_common_dir {
+            common.join(game_subdir)
+        } else {
+            std::env::temp_dir()
+                .join("sim-bridge-stubs")
+                .join(game_subdir)
+        };
         std::fs::create_dir_all(&game_dir).ok()?;
 
         let stub_path = game_dir.join(&exe_name);
@@ -182,7 +202,7 @@ pub fn setup_game_registry(stub_dir: &Path, log: &Logger) {
             "Assetto Corsa Competizione",
             "assettocorsacompetizione",
         ),
-        ("Steam App 3058630", "Assetto Corsa EVO", "assettocorsaevo"),
+        ("Steam App 3058630", "Assetto Corsa EVO", "assettocorsa_evo"),
     ];
 
     let mut any_created = false;
@@ -325,7 +345,7 @@ fn check_all_registry_ok(stub_dir: &Path) -> bool {
     let games = [
         ("Steam App 244210", "assettocorsa"),
         ("Steam App 805550", "assettocorsacompetizione"),
-        ("Steam App 3058630", "assettocorsaevo"),
+        ("Steam App 3058630", "assettocorsa_evo"),
     ];
 
     for (app_key, subdir) in &games {
@@ -467,7 +487,7 @@ fn setup_acc_environment(stub_dir: &Path, log: &Logger) {
 
 #[cfg(windows)]
 fn setup_acevo_environment(stub_dir: &Path, log: &Logger) {
-    let game_dir = stub_dir.join("assettocorsaevo");
+    let game_dir = stub_dir.join("assettocorsa_evo");
     for d in &["cfg", "content"] {
         std::fs::create_dir_all(game_dir.join(d)).ok();
     }

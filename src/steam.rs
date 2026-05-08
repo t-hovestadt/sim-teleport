@@ -15,6 +15,8 @@ struct AcGame {
     name: &'static str,
     /// Folder name Steam uses under steamapps\common\.
     install_dir: &'static str,
+    /// Name of the stub executable placed inside install_dir.
+    exe_name: &'static str,
 }
 
 #[cfg(windows)]
@@ -23,16 +25,19 @@ const AC_GAMES: &[AcGame] = &[
         appid: 244210,
         name: "Assetto Corsa",
         install_dir: "assettocorsa",
+        exe_name: "acs.exe",
     },
     AcGame {
         appid: 805550,
         name: "Assetto Corsa Competizione",
         install_dir: "assettocorsacompetizione",
+        exe_name: "acc.exe",
     },
     AcGame {
         appid: 3058630,
         name: "Assetto Corsa EVO",
         install_dir: "assettocorsa_evo",
+        exe_name: "assettocorsa_evo.exe",
     },
 ];
 
@@ -317,6 +322,26 @@ pub fn ensure_ac_appmanifests(
                         common_dir.display()
                     ));
                     continue;
+                }
+
+                // Copy sim-bridge.exe as the named stub process so that when
+                // StubManager spawns it, FindProcessPath resolves to this directory —
+                // the same path that the appmanifest points to.
+                if let Ok(src) = std::env::current_exe() {
+                    let dst = common_dir.join(game.exe_name);
+                    let needs_copy = !dst.exists() || {
+                        let src_mod = std::fs::metadata(&src).and_then(|m| m.modified()).ok();
+                        let dst_mod = std::fs::metadata(&dst).and_then(|m| m.modified()).ok();
+                        src_mod.zip(dst_mod).is_none_or(|(s, d)| s > d)
+                    };
+                    if needs_copy {
+                        if let Err(e) = std::fs::copy(&src, &dst) {
+                            log(&format!(
+                                "[steam] Cannot copy stub exe to {}: {e}",
+                                dst.display()
+                            ));
+                        }
+                    }
                 }
 
                 // Write the appmanifest.

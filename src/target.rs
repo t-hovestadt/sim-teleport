@@ -344,19 +344,25 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let t2 = tracker.clone();
     let iracing_on_stale: DataCb = Arc::new(move || t2.deactivate());
 
-    let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone())));
-
     // Create fake install directories and Steam ACF manifests at startup so
     // SimHub's ACManager finds a valid install path (prevents NullReferenceException).
+    // Discover the Steam common path first so StubManager can place stubs there —
+    // FindProcessPath must resolve to the same directory the appmanifest points to.
     // Stub processes are spawned on demand when data arrives, not here.
     let mut created_acf: Vec<std::path::PathBuf> = Vec::new();
+    let mut steam_common_dir: Option<std::path::PathBuf> = None;
     if config.apps.ac_teleport_enabled {
         let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
         std::fs::create_dir_all(&stub_dir).ok();
         stub::setup_all_game_environments(&stub_dir, log);
         let steam_libs = steam::find_steam_libraries(&|s| log.log(s));
+        steam_common_dir = steam_libs
+            .first()
+            .map(|l| l.join("steamapps").join("common"));
         created_acf = steam::ensure_ac_appmanifests(&steam_libs, &stub_dir, &|s| log.log(s));
     }
+
+    let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone(), steam_common_dir)));
 
     // game_announced: set by on_ac_announce; prevents on_first_data from overriding
     // the correct stub when a legacy source never sends PAGE_GAME_ANNOUNCE.
