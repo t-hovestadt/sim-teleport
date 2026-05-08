@@ -43,6 +43,7 @@ pub struct StubManager {
     /// FindProcessPath matches the path the appmanifest ACF points to.
     #[cfg(windows)]
     steam_common_dir: Option<std::path::PathBuf>,
+    #[cfg(windows)]
     log: Logger,
 }
 
@@ -75,8 +76,8 @@ impl StubManager {
         }
         #[cfg(not(windows))]
         {
-            let _ = steam_common_dir;
-            Self { log }
+            let _ = (log, steam_common_dir);
+            Self {}
         }
     }
 
@@ -182,258 +183,6 @@ impl StubManager {
         Some(child)
     }
 }
-
-// ── Registry helpers ──────────────────────────────────────────────────────────
-
-/// Create Steam registry entries for all three AC games so SimHub's ACManager /
-/// ACEVOManager finds a valid install path and does not crash with NullReferenceException.
-///
-/// Uses reg.exe (no winreg crate dependency). Idempotent — only writes entries that are
-/// absent or point elsewhere. Each entry's DisplayName is tagged "(sim-bridge)" so
-/// cleanup_game_registry can identify and safely remove only our entries.
-#[cfg(windows)]
-pub fn setup_game_registry(stub_dir: &Path, log: &Logger) {
-    use std::os::windows::process::CommandExt;
-
-    let games = [
-        ("Steam App 244210", "Assetto Corsa", "assettocorsa"),
-        (
-            "Steam App 805550",
-            "Assetto Corsa Competizione",
-            "assettocorsacompetizione",
-        ),
-        ("Steam App 3058630", "Assetto Corsa EVO", "assettocorsa_evo"),
-    ];
-
-    let mut any_created = false;
-
-    for (app_key, display_name, subdir) in &games {
-        let reg_path = format!(
-            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{}",
-            app_key
-        );
-
-        let install_dir = stub_dir.join(subdir);
-        std::fs::create_dir_all(&install_dir).ok();
-        let install_str = install_dir.to_string_lossy().into_owned();
-
-        // Check if entry already exists with the correct value — skip if so.
-        let check = std::process::Command::new("reg")
-            .args(["query", &reg_path, "/v", "InstallLocation"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-
-        let needs_update = match check {
-            Ok(o) if o.status.success() => {
-                !String::from_utf8_lossy(&o.stdout).contains(&*install_str)
-            }
-            _ => true,
-        };
-
-        if !needs_update {
-            continue;
-        }
-
-        let result = std::process::Command::new("reg")
-            .args([
-                "add",
-                &reg_path,
-                "/v",
-                "InstallLocation",
-                "/t",
-                "REG_SZ",
-                "/d",
-                &install_str,
-                "/f",
-            ])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-
-        match result {
-            Ok(o) if o.status.success() => {
-                log.log(&format!(
-                    "[SimHub] Registry: {} → {}",
-                    display_name, install_str
-                ));
-                any_created = true;
-
-                // Tag with "(sim-bridge)" so cleanup_game_registry can identify our entries.
-                let _ = std::process::Command::new("reg")
-                    .args([
-                        "add",
-                        &reg_path,
-                        "/v",
-                        "DisplayName",
-                        "/t",
-                        "REG_SZ",
-                        "/d",
-                        &format!("{display_name} (sim-bridge)"),
-                        "/f",
-                    ])
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .output();
-            }
-            Ok(o) => {
-                log.log(&format!(
-                    "[SimHub] Registry write to HKLM requires admin — \
-                     run 'sim-bridge setup' as Administrator once to fix AC1 NullReferenceException \
-                     (error: {})",
-                    String::from_utf8_lossy(&o.stderr).trim()
-                ));
-            }
-            Err(e) => {
-                log.log(&format!("[SimHub] reg.exe failed: {e}"));
-            }
-        }
-    }
-
-    if any_created {
-        log.log("[SimHub] Registry entries created — restart SimHub if already running");
-    }
-}
-
-#[cfg(not(windows))]
-pub fn setup_game_registry(_stub_dir: &Path, _log: &Logger) {}
-
-/// Delete registry entries created by setup_game_registry.
-/// Only removes entries whose DisplayName contains "(sim-bridge)" — real Steam entries are
-/// left untouched if the user has since installed the game.
-#[cfg(windows)]
-pub fn cleanup_game_registry(log: &Logger) {
-    use std::os::windows::process::CommandExt;
-
-    let keys = [
-        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 244210",
-        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 805550",
-        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 3058630",
-    ];
-
-    for key in &keys {
-        let check = std::process::Command::new("reg")
-            .args(["query", key, "/v", "DisplayName"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-
-        let is_ours = match check {
-            Ok(o) if o.status.success() => {
-                String::from_utf8_lossy(&o.stdout).contains("sim-bridge")
-            }
-            _ => false,
-        };
-
-        if is_ours {
-            let _ = std::process::Command::new("reg")
-                .args(["delete", key, "/f"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output();
-        }
-    }
-    log.log("[SimHub] Registry entries cleaned up");
-}
-
-#[cfg(not(windows))]
-pub fn cleanup_game_registry(_log: &Logger) {}
-
-// ── Auto-elevating registry setup ─────────────────────────────────────────────
-
-/// Returns true when all three HKLM InstallLocation entries exist and point to
-/// the expected stub subdirectories. Used to short-circuit `ensure_registry_entries`.
-#[cfg(windows)]
-fn check_all_registry_ok(stub_dir: &Path) -> bool {
-    use std::os::windows::process::CommandExt;
-
-    let games = [
-        ("Steam App 244210", "assettocorsa"),
-        ("Steam App 805550", "assettocorsacompetizione"),
-        ("Steam App 3058630", "assettocorsa_evo"),
-    ];
-
-    for (app_key, subdir) in &games {
-        let reg_path = format!(
-            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{}",
-            app_key
-        );
-        let install_str = stub_dir.join(subdir).to_string_lossy().into_owned();
-
-        let check = std::process::Command::new("reg")
-            .args(["query", &reg_path, "/v", "InstallLocation"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-
-        match check {
-            Ok(o) if o.status.success() => {
-                if !String::from_utf8_lossy(&o.stdout).contains(&*install_str) {
-                    return false;
-                }
-            }
-            _ => return false,
-        }
-    }
-    true
-}
-
-/// Ensure HKLM registry entries exist for all three AC games.
-///
-/// On the first call when entries are missing, attempts a direct write (succeeds when
-/// already elevated). If that fails, spawns an elevated `reg-setup` subprocess via UAC
-/// (one-time prompt). Subsequent calls are silent no-ops once all entries are present.
-#[cfg(windows)]
-pub fn ensure_registry_entries(stub_dir: &Path, log: &Logger) {
-    use std::os::windows::process::CommandExt;
-
-    if check_all_registry_ok(stub_dir) {
-        return;
-    }
-
-    // Try direct write — succeeds when the process is already elevated.
-    setup_game_registry(stub_dir, log);
-
-    if check_all_registry_ok(stub_dir) {
-        return;
-    }
-
-    // Direct write failed (access denied) — request elevation once.
-    log.log("[SimHub] Registry entries missing — requesting admin access (one-time)...");
-
-    let exe = match std::env::current_exe() {
-        Ok(e) => e,
-        Err(_) => {
-            log.log("[SimHub] Could not determine exe path for elevation");
-            return;
-        }
-    };
-
-    // Escape single quotes in the path for PowerShell single-quoted string.
-    let exe_str = exe.to_string_lossy().replace('\'', "''");
-    let ps_cmd = format!("Start-Process '{exe_str}' -ArgumentList 'reg-setup' -Verb RunAs -Wait");
-
-    let result = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-
-    match result {
-        Ok(s) if s.success() => {
-            if check_all_registry_ok(stub_dir) {
-                log.log("[SimHub] Registry entries created successfully");
-            } else {
-                log.log(
-                    "[SimHub] Registry setup may have been cancelled — \
-                     AC1 NullReferenceException may still occur in SimHub",
-                );
-            }
-        }
-        _ => {
-            log.log(
-                "[SimHub] Admin elevation failed or was declined — \
-                 AC1 NullReferenceException may still occur in SimHub",
-            );
-        }
-    }
-}
-
-#[cfg(not(windows))]
-pub fn ensure_registry_entries(_stub_dir: &Path, _log: &Logger) {}
 
 // ── Fake install directory structures ─────────────────────────────────────────
 
@@ -554,7 +303,6 @@ impl Drop for StubManager {
             let _ = child.wait();
             self.log.log(&format!("[stub] cleanup: killed {name}.exe"));
         }
-        cleanup_game_registry(&self.log);
         // Job object handle closes here — OS kills any remaining stubs.
     }
 }

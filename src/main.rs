@@ -417,7 +417,8 @@ fn run_setup() {
                 std::fs::create_dir_all(&stub_dir).ok();
                 let log = logger::Logger::stderr();
                 stub::setup_all_game_environments(&stub_dir, &log);
-                stub::ensure_registry_entries(&stub_dir, &log);
+                let steam_libs = steam::find_steam_libraries(&|s| log.log(s));
+                steam::ensure_ac_appmanifests(&steam_libs, &stub_dir, &|s| log.log(s));
             }
         }
         Err(e) => {
@@ -428,10 +429,10 @@ fn run_setup() {
 }
 
 fn run_reg_setup() {
-    let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
-    std::fs::create_dir_all(&stub_dir).ok();
-    let log = logger::Logger::stderr();
-    stub::setup_game_registry(&stub_dir, &log);
+    eprintln!(
+        "The reg-setup command is no longer needed. \
+         SimHub AC detection now uses Steam appmanifests."
+    );
 }
 
 fn run_install(mode_arg: Option<String>) {
