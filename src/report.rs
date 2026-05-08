@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Local};
 
+use crate::logger::Logger;
+
 pub struct GameSession {
     pub app: &'static str,
     pub label: String,
@@ -252,6 +254,42 @@ fn write_to(f: &mut impl Write, r: &SessionReport) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+/// Write a one-shot target-mode setup report to `sim-bridge-target-report.txt`
+/// next to the executable.
+///
+/// `notes` is the ordered list of `[steam]` and related log lines collected
+/// during Steam library discovery and appmanifest setup. Pass an empty slice
+/// when AC Teleport is disabled or Steam was not discovered.
+pub fn write_target_setup_report(notes: &[String], log: &Logger) {
+    let path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("sim-bridge-target-report.txt")))
+        .unwrap_or_else(|| PathBuf::from("sim-bridge-target-report.txt"));
+
+    let now = Local::now();
+    let version = env!("CARGO_PKG_VERSION");
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "sim-bridge {version} — target setup report\nGenerated: {}\n\n",
+        now.format("%Y-%m-%d %H:%M:%S %z")
+    ));
+    out.push_str("=== Steam / SimHub setup ===\n");
+    if notes.is_empty() {
+        out.push_str("AC Teleport disabled — Steam discovery skipped\n");
+    } else {
+        for line in notes {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+
+    match std::fs::write(&path, out) {
+        Ok(()) => log.log(&format!("[report] Target setup report: {}", path.display())),
+        Err(e) => log.log(&format!("[report] Cannot write target report: {e}")),
+    }
 }
 
 fn format_duration(secs: u64) -> String {

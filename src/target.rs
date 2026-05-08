@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -351,16 +352,24 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     // Stub processes are spawned on demand when data arrives, not here.
     let mut created_acf: Vec<std::path::PathBuf> = Vec::new();
     let mut steam_common_dir: Option<std::path::PathBuf> = None;
+    let setup_notes: RefCell<Vec<String>> = RefCell::new(Vec::new());
     if config.apps.ac_teleport_enabled {
         let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
         std::fs::create_dir_all(&stub_dir).ok();
         stub::setup_all_game_environments(&stub_dir, log);
-        let steam_libs = steam::find_steam_libraries(&|s| log.log(s));
+        let steam_libs = steam::find_steam_libraries(&|s| {
+            log.log(s);
+            setup_notes.borrow_mut().push(s.to_string());
+        });
         steam_common_dir = steam_libs
             .first()
             .map(|l| l.join("steamapps").join("common"));
-        created_acf = steam::ensure_ac_appmanifests(&steam_libs, &stub_dir, &|s| log.log(s));
+        created_acf = steam::ensure_ac_appmanifests(&steam_libs, &stub_dir, &|s| {
+            log.log(s);
+            setup_notes.borrow_mut().push(s.to_string());
+        });
     }
+    crate::report::write_target_setup_report(&setup_notes.into_inner(), log);
 
     let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone(), steam_common_dir)));
 
