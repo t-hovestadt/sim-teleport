@@ -32,6 +32,11 @@ pub struct SourceArgs {
     pub pin_core: Option<usize>,
     pub high_priority: bool,
     pub poll_rate: u32,
+    /// Print a hex dump of the first 64 bytes of EVO physics and graphics maps
+    /// once per second. Use this to locate the packetId field when the struct
+    /// layout is unknown — the 4-byte group that increments each frame is packetId.
+    /// Has no effect when the detected game is AC1.
+    pub verbose: bool,
 }
 
 struct ActiveMaps {
@@ -127,6 +132,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
         let tick = Duration::from_micros(1_000_000 / args.poll_rate.max(1) as u64);
         let mut next_tick = Instant::now();
         let mut session_active = false;
+        let mut diag_timer = Instant::now();
 
         loop {
             if shutdown.try_recv().is_ok() {
@@ -288,6 +294,16 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
             stats.maybe_print();
 
+            // ── EVO packetId diagnostic ──────────────────────────────────────────
+            // Emits a hex dump of the first 64 bytes of physics and graphics maps
+            // once per second so the incrementing 4-byte group (packetId) can be
+            // identified by eye. Remove once the correct field offsets are known.
+            if args.verbose && game.id == "evo" && diag_timer.elapsed() >= Duration::from_secs(1) {
+                println!("[acevo-diag] physics[0..64]:  {}", hex64(maps[0].as_slice()));
+                println!("[acevo-diag] graphics[0..64]: {}", hex64(maps[1].as_slice()));
+                diag_timer = Instant::now();
+            }
+
             // ── Tick timing ──────────────────────────────────────────────────────
             next_tick += tick;
             if args.busy_wait {
@@ -376,6 +392,17 @@ fn try_open_maps(game: &GameConfig) -> Result<[SharedMap; 3], MapError> {
     let graphics = SharedMap::open(game.graphics_map)?;
     let static_ = SharedMap::open(game.static_map)?;
     Ok([physics, graphics, static_])
+}
+
+/// Format the first 64 bytes of `slice` as space-separated uppercase hex pairs.
+/// Used by the EVO packetId diagnostic.
+fn hex64(slice: &[u8]) -> String {
+    let n = slice.len().min(64);
+    slice[..n]
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Read a little-endian i32 from `slice` at `offset`. Returns `None` if `slice` is shorter than `offset + 4`.

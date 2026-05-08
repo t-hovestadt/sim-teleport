@@ -43,6 +43,11 @@ struct Args {
     /// Polling rate in Hz.
     #[arg(long, default_value_t = 60)]
     poll_rate: u32,
+    /// Print a hex dump of the first 64 bytes of EVO physics/graphics maps
+    /// once per second. Use this to locate packetId when the struct layout
+    /// is unknown. No effect on AC1.
+    #[arg(long)]
+    verbose: bool,
 }
 
 fn main() {
@@ -85,6 +90,7 @@ fn main() {
             pin_core: args.pin_core,
             high_priority: args.high_priority,
             poll_rate: args.poll_rate,
+            verbose: args.verbose,
         },
         rx,
     ) {

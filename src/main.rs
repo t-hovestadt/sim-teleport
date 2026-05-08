@@ -56,6 +56,11 @@ enum Command {
         /// Polling rate in Hz (default: 60).
         #[arg(long, default_value_t = 60)]
         poll_rate: u32,
+        /// Print a hex dump of the first 64 bytes of EVO physics/graphics maps
+        /// once per second. Use this to locate packetId when the struct layout
+        /// is unknown. No effect on AC1.
+        #[arg(long)]
+        verbose: bool,
     },
 
     /// Receive telemetry and expose it as local shared memory for SimHub.
@@ -118,6 +123,7 @@ fn main() {
             pin_core,
             high_priority,
             poll_rate,
+            verbose,
         } => {
             let game_cfg = game_id.as_deref().map(resolve_game);
             let mode = if unicast { "unicast" } else { "multicast" };
@@ -135,6 +141,7 @@ fn main() {
                     pin_core,
                     high_priority,
                     poll_rate,
+                    verbose,
                 },
                 rx,
             )
