@@ -258,12 +258,30 @@ fn setup_game_common_dir(game: &AcGame, common_dir: &Path) {
     match game.appid {
         // Assetto Corsa
         244210 => {
-            for d in &["system/cfg", "apps/python/SimHub", "content/cars"] {
+            for d in &[
+                "system/cfg",
+                "apps/python/SimHub",
+                "content/cars",
+                "content/tracks",
+                "content/driver",
+                "content/sfx",
+                "content/fonts",
+                "content/gui",
+                "cfg",
+            ] {
                 std::fs::create_dir_all(common_dir.join(d)).ok();
             }
             let ini = common_dir.join("system/cfg/assetto_corsa.ini");
             if !ini.exists() {
                 std::fs::write(ini, "[SETTINGS]\r\n").ok();
+            }
+            let python_ini = common_dir.join("cfg/python.ini");
+            if !python_ini.exists() {
+                std::fs::write(
+                    python_ini,
+                    "[SIMHUB]\r\nACTIVE=1\r\n[SIMHUB_LOG]\r\nACTIVE=0\r\n",
+                )
+                .ok();
             }
             for fname in &["SimHub.py", "simhub_shared_mem.py", "__init__.py"] {
                 let py = common_dir.join("apps/python/SimHub").join(fname);
