@@ -364,6 +364,7 @@ impl AppSlot {
         let label = detection.label;
         let cfg = config.clone();
         let name = self.name;
+        let verbose = config.verbose;
 
         let handle = std::thread::Builder::new()
             .name(name.to_string())
@@ -434,6 +435,7 @@ impl AppSlot {
                             pin_core: None,
                             high_priority: cfg.apps.high_priority,
                             poll_rate: cfg.advanced.ac_poll_rate,
+                            verbose,
                         },
                         rx,
                     ) {
