@@ -10,6 +10,7 @@ type AcAnnounceCb = Arc<dyn Fn(u8) + Send + Sync>;
 use crate::config::Config;
 use crate::logger::Logger;
 use crate::simhub_setup;
+use crate::steam;
 use crate::stub::{self, StubManager};
 
 // ── SimHub auto-switching ─────────────────────────────────────────────────────
@@ -345,14 +346,16 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
 
     let stub_mgr = Arc::new(Mutex::new(StubManager::new(log.clone())));
 
-    // Create fake install directories and HKLM registry entries at startup.
-    // Registry write auto-elevates via UAC on first run if not already admin.
+    // Create fake install directories and Steam ACF manifests at startup so
+    // SimHub's ACManager finds a valid install path (prevents NullReferenceException).
     // Stub processes are spawned on demand when data arrives, not here.
+    let mut created_acf: Vec<std::path::PathBuf> = Vec::new();
     if config.apps.ac_teleport_enabled {
         let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
         std::fs::create_dir_all(&stub_dir).ok();
         stub::setup_all_game_environments(&stub_dir, log);
-        stub::ensure_registry_entries(&stub_dir, log);
+        let steam_libs = steam::find_steam_libraries(&|s| log.log(s));
+        created_acf = steam::ensure_ac_appmanifests(&steam_libs, &stub_dir, &|s| log.log(s));
     }
 
     // game_announced: set by on_ac_announce; prevents on_first_data from overriding
@@ -507,4 +510,5 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
         slot.stop(log);
     }
     log.log("All apps stopped. Goodbye.");
+    steam::cleanup_ac_appmanifests(&created_acf, &|s| log.log(s));
 }

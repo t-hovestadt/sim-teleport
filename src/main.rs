@@ -5,6 +5,7 @@ mod report;
 mod scanner;
 mod simhub_setup;
 mod source;
+mod steam;
 mod stub;
 mod target;
 
