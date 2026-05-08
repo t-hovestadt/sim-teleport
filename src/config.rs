@@ -99,9 +99,12 @@ pub struct SimhubConfig {
     /// SimHub game code for AC/ACE/ACC telemetry.
     #[serde(default = "default_ac_code")]
     pub ac: String,
-    /// SimHub game code for AC EVO. If None, EVO sessions use the `ac` code.
+    /// SimHub game code for AC EVO. If None, defaults to `"AssettoCorsaEVO"`.
     #[serde(default)]
     pub ac_evo: Option<String>,
+    /// SimHub game code for ACC. If None, defaults to `"AssettoCorsaCompetizione"`.
+    #[serde(default)]
+    pub acc: Option<String>,
     /// Maps sim-relay game IDs to SimHub game codes.
     /// Example: wreckfest2 = "Wreckfest2"
     #[serde(default)]
@@ -122,6 +125,7 @@ impl Default for SimhubConfig {
             iracing: default_iracing_code(),
             ac: default_ac_code(),
             ac_evo: None,
+            acc: None,
             relay: HashMap::new(),
         }
     }
@@ -240,7 +244,8 @@ datagram_size = {datagram_size}
 # SimHub game codes — change only if SimHub uses a different string for your setup.
 iracing = "{iracing_code}"
 ac = "{ac_code}"
-# ac_evo = "AssettoCorsa_EVO"  # SimHub code for AC EVO (defaults to ac code above)
+# ac_evo = "AssettoCorsaEVO"          # SimHub code for AC EVO (default: AssettoCorsaEVO)
+# acc    = "AssettoCorsaCompetizione" # SimHub code for ACC   (default: AssettoCorsaCompetizione)
 "#,
         mode = config.mode,
         unicast = config.network.unicast,

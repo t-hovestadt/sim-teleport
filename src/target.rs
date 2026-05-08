@@ -395,6 +395,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     let p3a = simhub_path.clone();
     let c3a = ac_code.clone();
     let evo_code = config.simhub.ac_evo.clone();
+    let acc_code = config.simhub.acc.clone();
     let sm_announce = stub_mgr.clone();
     let ga_announce = game_announced.clone();
     let ac_on_announce: AcAnnounceCb = Arc::new(move |game_id: u8| {
@@ -413,14 +414,16 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
                 mgr.kill("acc");
                 mgr.ensure_running("assettocorsa_evo");
                 drop(mgr);
-                let code = evo_code.as_deref().unwrap_or(c3a.as_str());
+                let code = evo_code.as_deref().unwrap_or("AssettoCorsaEVO");
                 t3a.try_activate(code, p3a.as_deref());
             }
             ac_teleport::GAME_ID_ACC => {
                 mgr.kill("acs");
                 mgr.kill("assettocorsa_evo");
                 mgr.ensure_running("acc");
-                // ACC SimHub code: no standard -switchgame code known — skip switch.
+                drop(mgr);
+                let code = acc_code.as_deref().unwrap_or("AssettoCorsaCompetizione");
+                t3a.try_activate(code, p3a.as_deref());
             }
             _ => {}
         }
