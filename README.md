@@ -783,7 +783,7 @@ before pushing any Windows-specific code.
 
 | Repo | Tag | Notes |
 |------|-----|-------|
-| sim-teleport | `v0.1.5` | Stays at HEAD; moved on each release |
+| sim-teleport | `v0.2.0` | Stays at HEAD; moved on each release |
 | iracing-teleport | `v1.0` | Moves to HEAD on every update; never create `v1.0.x` tags |
 
 Release workflow triggers on `push: tags: v*`. CI runs on `windows-latest`.

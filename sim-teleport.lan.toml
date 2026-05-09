@@ -36,9 +36,22 @@ sim_relay_enabled = true
 high_priority = false
 busy_wait = false
 fanalab = false
+# Port offset for Sim Relay: target listens on (game_port+offset), SimHub reads game_port.
+# Avoids binding conflict between sim-relay and SimHub on the target PC. Default 10000.
+relay_port_offset = 10000
 
 [advanced]
 stale_timeout_secs = 10
 reconnect_timeout_secs = 10
 ac_poll_rate = 60
 datagram_size = 9000
+
+[simhub]
+# Automatically switch SimHub to the correct game when telemetry arrives.
+# Full path to SimHubWPF.exe (leave commented for default install location).
+# path = "C:/Program Files (x86)/SimHub/SimHubWPF.exe"
+# SimHub game codes — change only if SimHub uses a different string for your setup.
+iracing = "iRacing"
+ac = "AssettoCorsa"
+# ac_evo = "AssettoCorsaEVO"          # SimHub code for AC EVO (default: AssettoCorsaEVO)
+# acc    = "AssettoCorsaCompetizione" # SimHub code for ACC   (default: AssettoCorsaCompetizione)

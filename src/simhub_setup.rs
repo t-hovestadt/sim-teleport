@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 /// These are the internal names SimHub uses to identify each game.
 #[cfg(windows)]
 const GAMES_TO_CONFIGURE: &[&str] = &[
-    "IRacing",
+    "iRacing",
     "AssettoCorsa",
     "AssettoCorsaEVO",
     "AssettoCorsaCompetizione",

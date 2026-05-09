@@ -140,7 +140,7 @@ fn write_to(f: &mut impl Write, r: &SessionReport) -> std::io::Result<()> {
     if r.iracing_probes > 0 {
         writeln!(
             f,
-            "  iRacing event probes: {} ({} hits, {} misses)",
+            "  iRacing process scans: {} ({} hits, {} misses)",
             r.iracing_probes,
             r.iracing_hits,
             r.iracing_probes - r.iracing_hits

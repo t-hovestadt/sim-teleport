@@ -470,7 +470,7 @@ fn run_list(verbose: bool) {
         println!("  {}", "-".repeat(85));
         println!(
             "  {:<35} {:<40} {}",
-            "iRacing", "Named event: IRSDKDataValidEvent", cfg.ports.iracing_teleport
+            "iRacing", "Process scan: iRacingSim64DX11.exe", cfg.ports.iracing_teleport
         );
         println!(
             "  {:<35} {:<40} {}",

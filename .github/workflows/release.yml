@@ -36,7 +36,6 @@ jobs:
           Copy-Item start-target.bat release/
           Copy-Item sim-teleport.lan.toml release/
           Copy-Item sim-teleport.direct.toml release/
-          Copy-Item README.md release/
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -47,5 +46,4 @@ jobs:
             release/start-target.bat
             release/sim-teleport.lan.toml
             release/sim-teleport.direct.toml
-            release/README.md
           generate_release_notes: true
