@@ -257,7 +257,7 @@ a game exits — the region stays alive until the last open handle is closed.
 If SimHub has the map open, the region persists indefinitely after the game
 quits. Stale `packetId` (no change in 100 ms) is how we detect this case.
 A process-name tiebreaker confirms: if `acs.exe` (or `acc.exe`,
-`assettocorsa_evo.exe`) is not in the running process list, the map is
+`AssettoCorsa_EVO.exe`) is not in the running process list, the map is
 a ghost and is ignored.
 
 **EVO vs AC1 disambiguation**: EVO uses `Local\acevo_pmf_physics`, AC1 and
@@ -460,7 +460,7 @@ AC Teleport source sends a `PAGE_GAME_ANNOUNCE` packet (buf_offset =
 The 1-byte payload is the game ID: `0` = AC1, `1` = EVO, `2` = ACC.
 
 The target receives this before the first telemetry frame. On receipt:
-1. The correct stub process is spawned (`acs.exe`, `assettocorsa_evo.exe`,
+1. The correct stub process is spawned (`acs.exe`, `AssettoCorsaEVO.exe`,
    or `acc.exe`).
 2. `SimHubWPF.exe -switchgame <code>` is called with the correct SimHub
    code (`AssettoCorsa`, `AssettoCorsaEVO`, or `AssettoCorsaCompetizione`).

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- **Renamed to sim-teleport**: binary is now `sim-teleport.exe`, config file is
+  `sim-teleport.toml`, log is `sim-teleport.log`, reports are
+  `sim-teleport-report.txt` / `sim-teleport-target-report.txt`, stub temp
+  directory is `%TEMP%\sim-teleport-stubs\`, Task Scheduler entry is
+  `SimTeleport`, and firewall rule display names are `"sim-teleport source"` /
+  `"sim-teleport target"`. The binary loads `sim-bridge.toml` as a fallback with
+  a migration warning if `sim-teleport.toml` is not found. `uninstall` also
+  removes the legacy `SimBridge` Task Scheduler entry if present.
+
 ### Internal
 
 - **Monorepo consolidation**: ac-teleport and sim-relay absorbed as Cargo
