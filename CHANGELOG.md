@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.2.1
+
+### Fixed
+
+- **SimHub iRacing game code**: `simhub_setup.rs` was writing `"IRacing"` (capital R) into
+  `GameSettings.json` and creating `PluginsData/IRacing/`. SimHub's internal game code is
+  `"iRacing"` (lowercase r), which is what the `-switchgame` command sends. The mismatch
+  meant the pre-configured settings and the active game slot never matched. Fixed: correct
+  capitalisation throughout.
+
+- **`sim-teleport list --verbose` iRacing detection string**: displayed
+  `"Named event: IRSDKDataValidEvent"` — the reverted event-probe approach. Actual detection
+  is a ToolHelp32 process scan for `iRacingSim64DX11.exe`. Fixed to show
+  `"Process scan: iRacingSim64DX11.exe"`.
+
+- **Session report "iRacing event probes" label**: the source-mode session report printed
+  "iRacing event probes" for the detection counter; the field counts process scan cycles,
+  not event probes. Fixed label to "iRacing process scans".
+
+- **Binary version mismatch**: `Cargo.toml` was left at `0.1.5` after tagging v0.2.0, so
+  `CARGO_PKG_VERSION` embedded in the target setup report said "0.1.5". Bumped to `0.2.0`
+  in the previous commit; now at `0.2.1`.
+
+### Updated
+
+- **Template config files** (`sim-teleport.lan.toml`, `sim-teleport.direct.toml`): added
+  `relay_port_offset = 10000` to `[apps]` and a full `[simhub]` section with commented-out
+  override fields, matching what the setup wizard generates.
+
+- **Release assets**: removed `README.md` from the GitHub Release download list (it is
+  already visible on the repository page and is not a useful download artifact).
+
+---
+
 ## v0.2.0
 
 ### Breaking changes
