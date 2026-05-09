@@ -51,6 +51,17 @@ impl GameMapSet {
         Ok(Self { maps })
     }
 
+    /// Create maps using the per-page sizes documented in `GameConfig`.
+    /// Matches what the real game creates so SimHub doesn't see an oversized region.
+    fn create_game_sized(game: &GameConfig) -> Result<Self, MapError> {
+        let maps = [
+            SharedMap::create(game.physics_map, game.max_physics_size)?,
+            SharedMap::create(game.graphics_map, game.max_graphics_size)?,
+            SharedMap::create(game.static_map, game.max_static_size)?,
+        ];
+        Ok(Self { maps })
+    }
+
     fn write_page(&mut self, page_idx: usize, data: &[u8]) {
         if page_idx >= self.maps.len() {
             return;
@@ -104,7 +115,12 @@ impl MapMode {
     fn page_size(&self, page_idx: usize) -> usize {
         match self {
             Self::Single(set) => set.page_size(page_idx),
-            Self::Dual { evo, .. } => evo.page_size(page_idx),
+            Self::Dual { evo, ac1 } => {
+                // Return the larger of the two so neither game's data is truncated at
+                // the write_len call site.  Each GameMapSet::write_page clips to its
+                // own map size independently, so the smaller EVO maps never overflow.
+                evo.page_size(page_idx).max(ac1.page_size(page_idx))
+            }
         }
     }
 
@@ -165,7 +181,7 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
     // In single-game mode, create lazily on first data arrival (existing behavior).
     let mut maps: Option<MapMode> =
         if args.game.is_none() {
-            let evo = GameMapSet::create(&game::EVO, DUAL_MAP_SIZE)
+            let evo = GameMapSet::create_game_sized(&game::EVO)
                 .map_err(|e| std::io::Error::other(format!("failed to create EVO maps: {e}")))?;
             let ac1 = GameMapSet::create(&game::AC1, DUAL_MAP_SIZE)
                 .map_err(|e| std::io::Error::other(format!("failed to create AC1 maps: {e}")))?;
@@ -175,9 +191,14 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 game::AC1.name
             );
             println!(
-            "  {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes)",
-            game::EVO.physics_map, game::EVO.graphics_map, game::EVO.static_map
-        );
+                "  {} ({} bytes), {} ({} bytes), {} ({} bytes)",
+                game::EVO.physics_map,
+                game::EVO.max_physics_size,
+                game::EVO.graphics_map,
+                game::EVO.max_graphics_size,
+                game::EVO.static_map,
+                game::EVO.max_static_size,
+            );
             println!(
             "  {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes)",
             game::AC1.physics_map, game::AC1.graphics_map, game::AC1.static_map
