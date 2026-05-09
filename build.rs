@@ -1,9 +1,7 @@
 fn main() {
     let iracing_toml = "deps/iracing-teleport/teleport/Cargo.toml";
     if !std::path::Path::new(iracing_toml).exists() {
-        panic!(
-            "\n\nSubmodules not initialized.\nRun: git submodule update --init --recursive\n\n"
-        );
+        panic!("\n\nSubmodules not initialized.\nRun: git submodule update --init --recursive\n\n");
     }
 
     for (name, path) in [
