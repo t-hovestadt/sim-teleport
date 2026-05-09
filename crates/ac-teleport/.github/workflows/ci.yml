@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Build and Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+          components: clippy, rustfmt
+
+      - name: Install MinGW
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --target x86_64-pc-windows-gnu --all-targets --all-features -- -D warnings
+
+      - name: Run build
+        run: cargo build --target x86_64-pc-windows-gnu --release
+
+      - name: Run tests
+        run: cargo test --release
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ac-teleport
+          path: |
+            target/x86_64-pc-windows-gnu/release/source.exe
+            target/x86_64-pc-windows-gnu/release/target.exe
+            target/x86_64-pc-windows-gnu/release/ac-teleport.exe
+          retention-days: 7
