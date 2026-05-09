@@ -407,7 +407,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
         let mut mgr = sm_announce.lock().unwrap();
         match game_id {
             ac_teleport::GAME_ID_AC1 => {
-                mgr.kill("assettocorsa_evo");
+                mgr.kill("AssettoCorsaEVO");
                 mgr.kill("acc");
                 mgr.ensure_running("acs");
                 drop(mgr);
@@ -416,14 +416,14 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
             ac_teleport::GAME_ID_EVO => {
                 mgr.kill("acs");
                 mgr.kill("acc");
-                mgr.ensure_running("assettocorsa_evo");
+                mgr.ensure_running("AssettoCorsaEVO");
                 drop(mgr);
                 let code = evo_code.as_deref().unwrap_or("AssettoCorsaEVO");
                 t3a.try_activate(code, p3a.as_deref());
             }
             ac_teleport::GAME_ID_ACC => {
                 mgr.kill("acs");
-                mgr.kill("assettocorsa_evo");
+                mgr.kill("AssettoCorsaEVO");
                 mgr.ensure_running("acc");
                 drop(mgr);
                 let code = acc_code.as_deref().unwrap_or("AssettoCorsaCompetizione");
@@ -440,7 +440,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
         ga_stale.store(false, std::sync::atomic::Ordering::Relaxed);
         let mut mgr = sm_stale.lock().unwrap();
         mgr.kill("acs");
-        mgr.kill("assettocorsa_evo");
+        mgr.kill("AssettoCorsaEVO");
         mgr.kill("acc");
         drop(mgr);
         t4.deactivate();

@@ -3,7 +3,7 @@
 //! SimHub's AC plugins call IsProcessRunning before reading shared memory. On the target PC
 //! no game process exists, so the plugins silently skip telemetry even after sim-bridge has
 //! populated the maps. Spawning a copy of sim-bridge.exe named acs.exe / acc.exe /
-//! assettocorsa_evo.exe satisfies the check.
+//! AssettoCorsaEVO.exe satisfies the check.
 //!
 //! When Steam libraries are found, stubs are placed inside the Steam common directories that
 //! the appmanifest ACF files point to (e.g. steamapps\common\assettocorsa\acs.exe). This
@@ -48,7 +48,7 @@ pub struct StubManager {
 }
 
 impl StubManager {
-    /// `game_dirs` — map from stub name ("acs", "acc", "assettocorsa_evo") to the
+    /// `game_dirs` — map from stub name ("acs", "acc", "AssettoCorsaEVO") to the
     /// actual game install directory read from the appmanifest ACF. Pass an empty map
     /// to fall back to `%TEMP%\sim-bridge-stubs\` placement.
     pub fn new(
@@ -136,7 +136,7 @@ impl StubManager {
         let (game_subdir, exe_name): (&str, String) = match name {
             "acs" => ("assettocorsa", "acs.exe".to_string()),
             "acc" => ("assettocorsacompetizione", "acc.exe".to_string()),
-            "assettocorsa_evo" => ("assettocorsa_evo", "assettocorsa_evo.exe".to_string()),
+            "AssettoCorsaEVO" => ("AssettoCorsaEVO", "AssettoCorsaEVO.exe".to_string()),
             other => (other, format!("{other}.exe")),
         };
 
@@ -238,7 +238,7 @@ fn setup_acc_environment(stub_dir: &Path, log: &Logger) {
 
 #[cfg(windows)]
 fn setup_acevo_environment(stub_dir: &Path, log: &Logger) {
-    let game_dir = stub_dir.join("assettocorsa_evo");
+    let game_dir = stub_dir.join("AssettoCorsaEVO");
     for d in &["cfg", "content"] {
         std::fs::create_dir_all(game_dir.join(d)).ok();
     }

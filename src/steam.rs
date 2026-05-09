@@ -38,7 +38,7 @@ const AC_GAMES: &[AcGame] = &[
         appid: 3058630,
         name: "Assetto Corsa EVO",
         install_dir: "assettocorsa_evo",
-        exe_name: "assettocorsa_evo.exe",
+        exe_name: "AssettoCorsaEVO.exe",
     },
 ];
 
@@ -173,7 +173,7 @@ fn parse_install_dir(acf_path: &Path) -> Option<String> {
 
 /// For each AC game, resolve the actual install directory by reading `installdir`
 /// from whichever appmanifest ACF is present (real or stub-written). Returns a map
-/// from stub process name ("acs", "acc", "assettocorsa_evo") to the full path of
+/// from stub process name ("acs", "acc", "AssettoCorsaEVO") to the full path of
 /// the game directory under `steamapps\common\`.
 ///
 /// Call this **after** `ensure_ac_appmanifests` so that stub-written ACFs are readable.
@@ -183,7 +183,7 @@ pub fn resolve_game_dirs(libraries: &[PathBuf]) -> HashMap<String, PathBuf> {
         const STUB_NAMES: &[(&str, u32)] = &[
             ("acs", 244210),
             ("acc", 805550),
-            ("assettocorsa_evo", 3058630),
+            ("AssettoCorsaEVO", 3058630),
         ];
         let mut result = HashMap::new();
         'game: for &(stub_name, appid) in STUB_NAMES {
