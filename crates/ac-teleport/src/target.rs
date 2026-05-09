@@ -107,6 +107,17 @@ impl MapMode {
             Self::Dual { evo, .. } => evo.page_size(page_idx),
         }
     }
+
+    // DIAGNOSTIC: read the first `n` bytes of the EVO physics map for hex logging.
+    // In Single mode this reads maps[0] of whatever game was started; in Dual mode
+    // it always reads the evo set (acevo_pmf_physics).
+    fn evo_physics_peek(&self, n: usize) -> &[u8] {
+        let slice = match self {
+            Self::Single(set) => set.maps[0].as_slice(),
+            Self::Dual { evo, .. } => evo.maps[0].as_slice(),
+        };
+        &slice[..n.min(slice.len())]
+    }
 }
 
 // ── Main run ──────────────────────────────────────────────────────────────────
@@ -192,6 +203,7 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
     let mut recv_buf = [0u8; MAX_DATAGRAM_SIZE];
     let mut proto = ProtoReceiver::new(max_page);
     let mut last_update = Instant::now();
+    let mut last_hex_dump = Instant::now(); // DIAGNOSTIC
     let mut stats = Stats::new("target");
     let mut seq_start: Option<Instant> = None;
     let mut first_frame_logged = false;
@@ -221,6 +233,7 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 if buf_offset == PAGE_GAME_ANNOUNCE {
                     if let Some(bytes) = assembled {
                         if let Some(&game_id) = bytes.first() {
+                            println!("[DIAG] PAGE_GAME_ANNOUNCE: game_id={game_id}"); // DIAGNOSTIC
                             if let Some(cb) = &args.on_game_announce {
                                 cb(game_id);
                             }
@@ -273,6 +286,17 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                             }
                             let write_len = n.min(map_size);
                             map_mode.write_page(page_idx, &decomp_buf[..write_len]);
+                            // DIAGNOSTIC: print first 32 bytes of acevo_pmf_physics every 5s.
+                            if last_hex_dump.elapsed() >= Duration::from_secs(5) {
+                                let peek = map_mode.evo_physics_peek(32);
+                                let hex = peek
+                                    .iter()
+                                    .map(|b| format!("{b:02x}"))
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
+                                println!("[DIAG] acevo_pmf_physics[0..32]: {hex}");
+                                last_hex_dump = Instant::now();
+                            }
                             Some((compressed_len, n))
                         }
                         Err(e) => {
