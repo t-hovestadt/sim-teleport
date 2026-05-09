@@ -5,7 +5,7 @@ use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use crate::game::{self, GameConfig};
-use crate::maps::{MapError, SharedMap};
+use crate::maps::SharedMap;
 use crate::platform::{
     boost_thread_priority, pin_thread_to_core, set_high_priority, HighResTimer, MmcssGuard,
 };
@@ -36,50 +36,69 @@ pub struct TargetArgs {
 
 // ── Map abstractions ──────────────────────────────────────────────────────────
 
-/// One game's three shared memory maps.
+/// Try to create or open one shared memory map.
+/// Logs a warning and returns `None` if both strategies fail so the caller can
+/// continue with the remaining maps rather than aborting the whole target.
+fn try_create_map(name: &str, size: usize) -> Option<SharedMap> {
+    match SharedMap::create(name, size) {
+        Ok(m) => Some(m),
+        Err(e) => {
+            eprintln!("[AC Teleport] warning: could not create/open map {name}: {e}");
+            None
+        }
+    }
+}
+
+/// One game's three shared memory maps (physics / graphics / static).
+/// Each slot is `None` when map creation failed (logged at startup); writes to
+/// that slot are silently skipped so the other two maps continue working.
 struct GameMapSet {
-    maps: [SharedMap; 3],
+    maps: [Option<SharedMap>; 3],
 }
 
 impl GameMapSet {
-    fn create(game: &GameConfig, size: usize) -> Result<Self, MapError> {
-        let maps = [
-            SharedMap::create(game.physics_map, size)?,
-            SharedMap::create(game.graphics_map, size)?,
-            SharedMap::create(game.static_map, size)?,
-        ];
-        Ok(Self { maps })
+    fn create(game: &GameConfig, size: usize) -> Self {
+        Self {
+            maps: [
+                try_create_map(game.physics_map, size),
+                try_create_map(game.graphics_map, size),
+                try_create_map(game.static_map, size),
+            ],
+        }
     }
 
     /// Create maps using the per-page sizes documented in `GameConfig`.
     /// Matches what the real game creates so SimHub doesn't see an oversized region.
-    fn create_game_sized(game: &GameConfig) -> Result<Self, MapError> {
-        let maps = [
-            SharedMap::create(game.physics_map, game.max_physics_size)?,
-            SharedMap::create(game.graphics_map, game.max_graphics_size)?,
-            SharedMap::create(game.static_map, game.max_static_size)?,
-        ];
-        Ok(Self { maps })
+    fn create_game_sized(game: &GameConfig) -> Self {
+        Self {
+            maps: [
+                try_create_map(game.physics_map, game.max_physics_size),
+                try_create_map(game.graphics_map, game.max_graphics_size),
+                try_create_map(game.static_map, game.max_static_size),
+            ],
+        }
     }
 
     fn write_page(&mut self, page_idx: usize, data: &[u8]) {
-        if page_idx >= self.maps.len() {
-            return;
+        if let Some(Some(map)) = self.maps.get_mut(page_idx) {
+            let copy_len = data.len().min(map.size());
+            map.as_slice_mut()[..copy_len].copy_from_slice(&data[..copy_len]);
         }
-        let map = &mut self.maps[page_idx];
-        let copy_len = data.len().min(map.size());
-        map.as_slice_mut()[..copy_len].copy_from_slice(&data[..copy_len]);
     }
 
-    /// Zero all three map pages so FanaLab reads RPM=0 and resets wheel LEDs.
+    /// Zero all available map pages so FanaLab reads RPM=0 and resets wheel LEDs.
     fn zero_all(&mut self) {
-        for map in self.maps.iter_mut() {
+        for map in self.maps.iter_mut().filter_map(Option::as_mut) {
             map.as_slice_mut().fill(0);
         }
     }
 
     fn page_size(&self, page_idx: usize) -> usize {
-        self.maps[page_idx].size()
+        if let Some(Some(m)) = self.maps.get(page_idx) {
+            m.size()
+        } else {
+            0
+        }
     }
 }
 
@@ -128,9 +147,9 @@ impl MapMode {
     // In Single mode this reads maps[0] of whatever game was started; in Dual mode
     // it always reads the evo set (acevo_pmf_physics).
     fn evo_physics_peek(&self, n: usize) -> &[u8] {
-        let slice = match self {
-            Self::Single(set) => set.maps[0].as_slice(),
-            Self::Dual { evo, .. } => evo.maps[0].as_slice(),
+        let slice: &[u8] = match self {
+            Self::Single(set) => set.maps[0].as_ref().map_or(&[], |m| m.as_slice()),
+            Self::Dual { evo, .. } => evo.maps[0].as_ref().map_or(&[], |m| m.as_slice()),
         };
         &slice[..n.min(slice.len())]
     }
@@ -181,10 +200,8 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
     // In single-game mode, create lazily on first data arrival (existing behavior).
     let mut maps: Option<MapMode> =
         if args.game.is_none() {
-            let evo = GameMapSet::create_game_sized(&game::EVO)
-                .map_err(|e| std::io::Error::other(format!("failed to create EVO maps: {e}")))?;
-            let ac1 = GameMapSet::create(&game::AC1, DUAL_MAP_SIZE)
-                .map_err(|e| std::io::Error::other(format!("failed to create AC1 maps: {e}")))?;
+            let evo = GameMapSet::create_game_sized(&game::EVO);
+            let ac1 = GameMapSet::create(&game::AC1, DUAL_MAP_SIZE);
             println!(
                 "Created shared memory maps for {} and {}",
                 game::EVO.name,
@@ -278,17 +295,9 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                                 continue;
                             }
                         };
-                        match GameMapSet::create(game, DUAL_MAP_SIZE) {
-                            Ok(set) => {
-                                println!("Created shared memory maps for {}.", game.name);
-                                maps = Some(MapMode::Single(set));
-                            }
-                            Err(e) => {
-                                return Err(std::io::Error::other(format!(
-                                    "failed to create maps: {e}"
-                                )));
-                            }
-                        }
+                        let set = GameMapSet::create(game, DUAL_MAP_SIZE);
+                        println!("Created shared memory maps for {}.", game.name);
+                        maps = Some(MapMode::Single(set));
                     }
 
                     let Some(map_mode) = maps.as_mut() else {

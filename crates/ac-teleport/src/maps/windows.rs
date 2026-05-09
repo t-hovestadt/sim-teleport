@@ -73,10 +73,49 @@ impl WindowsSharedMap {
     }
 
     /// Create a new pagefile-backed named shared memory region (target side — writable).
-    /// Uses an explicit NULL DACL so any process can open the map by name, regardless
-    /// of user account or elevation level. Matches iRacing's own shared memory setup.
+    ///
+    /// If a mapping with this name already exists (e.g., held by FanatecService/FanaLab),
+    /// we open it for write access instead of creating a new one.  Writing into FanaLab's
+    /// own map is actually ideal — it is already reading from it for LED data.
+    ///
+    /// Uses an explicit NULL DACL on newly created maps so any process can open them,
+    /// regardless of user account or elevation level. Matches iRacing's own setup.
     pub fn create(name: &str, size: usize) -> Result<Self, MapError> {
         unsafe {
+            let name_w = wide(name);
+
+            // ── Step 1: open an existing map if one is already present ────────────
+            // FanatecService.exe / FanaLab may hold EVO (or AC1) maps with exclusive
+            // access, causing CreateFileMappingW to fail with ERROR_ACCESS_DENIED.
+            // Try to open the existing mapping for write first; if MapViewOfFile
+            // succeeds we use that handle and skip CreateFileMappingW entirely.
+            let h_existing = OpenFileMappingW(FILE_MAP_WRITE, 0, name_w.as_ptr());
+            if h_existing != 0 && h_existing != INVALID_HANDLE_VALUE {
+                let view = MapViewOfFile(h_existing, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+                if !view.Value.is_null() {
+                    let mapped_size = query_region_size(view.Value as *const u8).unwrap_or(0);
+                    if mapped_size > 0 {
+                        println!(
+                            "[AC Teleport] {name} held by another process (likely FanaLab) \
+                             — opening existing map"
+                        );
+                        return Ok(Self {
+                            h_map: h_existing,
+                            view,
+                            size: mapped_size,
+                        });
+                    }
+                    UnmapViewOfFile(view);
+                } else {
+                    eprintln!(
+                        "[AC Teleport] {name}: existing map found but MapViewOfFile failed \
+                         — will try CreateFileMappingW"
+                    );
+                }
+                CloseHandle(h_existing);
+            }
+
+            // ── Step 2: create a new pagefile-backed mapping ──────────────────────
             // Build an explicit NULL DACL security descriptor.
             // A null lpSecurityDescriptor would use the default SD (inherits from creator),
             // which may block access from differently-elevated processes. A NULL DACL grants
@@ -105,7 +144,7 @@ impl WindowsSharedMap {
                 PAGE_READWRITE,
                 (size >> 32) as u32,
                 (size & 0xFFFF_FFFF) as u32,
-                wide(name).as_ptr(),
+                name_w.as_ptr(),
             );
             if h_map == 0 {
                 return Err(MapError::Other(format!(
