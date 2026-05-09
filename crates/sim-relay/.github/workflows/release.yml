@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows binaries
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build release binaries
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Rename binaries
+        run: |
+          $version = "${{ github.ref_name }}"
+          $dir = "target/x86_64-pc-windows-msvc/release"
+
+          $files = @(
+            @{ src = "$dir/sim-relay.exe"; dst = "sim-relay-$version-windows-x86_64.exe" },
+            @{ src = "$dir/source.exe";    dst = "source-$version-windows-x86_64.exe" },
+            @{ src = "$dir/target.exe";    dst = "target-$version-windows-x86_64.exe" }
+          )
+
+          foreach ($f in $files) {
+            Move-Item $f.src $f.dst
+          }
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sim-relay-${{ github.ref_name }}-windows-x86_64.exe
+            source-${{ github.ref_name }}-windows-x86_64.exe
+            target-${{ github.ref_name }}-windows-x86_64.exe
+            start-source.bat
+            start-target.bat
+          generate_release_notes: true
+          body: |
+            ## sim-relay ${{ github.ref_name }}
+
+            **Downloads:**
+
+            | File | Machine |
+            |------|---------|
+            | `source-${{ github.ref_name }}-windows-x86_64.exe` | Gaming PC |
+            | `target-${{ github.ref_name }}-windows-x86_64.exe` | SimHub PC |
+            | `sim-relay-${{ github.ref_name }}-windows-x86_64.exe` | Either (combined CLI: `sim-relay source` / `sim-relay target`) |
+            | `start-source.bat` | Gaming PC (convenience launcher) |
+            | `start-target.bat` | SimHub PC (convenience launcher) |
+
+            ### Quick start
+
+            **Gaming PC:**
+            ```
+            source.exe --target <SimHub-PC-IP>
+            ```
+
+            **SimHub PC (optional — only needed if SimHub is on a non-default port):**
+            ```
+            target.exe
+            ```
+
+            **List supported games:**
+            ```
+            sim-relay.exe list
+            ```
+
+            See [README](https://github.com/t-hovestadt/sim-relay#readme) for full setup instructions.
