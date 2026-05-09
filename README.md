@@ -770,6 +770,7 @@ before pushing any Windows-specific code.
 | SimHub shows wrong game overlay | Game not in built-in code table; add to `[simhub.relay]`. |
 | AC1 NullReferenceException in SimHub | Fake install incomplete; check target log for `[steam]` errors. |
 | 0.2 msg/s on AC EVO (vs 60+ for AC1) | EVO game is on the menu, not in a session — `packetId` only advances in-session. Normal behavior. |
+| SimHub logs `Missing key 0 in LookupTables\AssettoCorsaEVO.CarNames.csv` | Cosmetic only — SimHub's car-name lookup table doesn't have entries for all AC EVO car IDs yet. Telemetry data (RPM, speed, gear, lap times) works regardless. Check for a newer SimHub version; these CSV files are updated periodically. |
 | 0 msg/s on target | Data not reaching target — check source log, firewall, and network path. |
 | FanaLab LEDs stuck after game exits | Stale RPM data. Ensure `stale_timeout_secs` fires and zeroing runs. A 10-second delay is normal. |
 | Wreckfest 2 not detected | `config.json` missing or game not restarted after creation. Check source log for `Created telemetry config`. |

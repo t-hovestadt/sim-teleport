@@ -96,6 +96,18 @@ fn detect_shmem_game(
             None => {}
         }
 
+        // EVO maps exist (Live or Stale) but the game wasn't confirmed above.
+        // Do NOT fall through to the AC1/ACC check.  SimHub running on the source
+        // PC creates acpmf_* maps that may have an advancing packetId even when
+        // AC1 is not running, which would cause a false AC1 detection.
+        // Returning None here lets the next scan cycle re-probe cleanly.
+        if ac.ac_evo.is_some() {
+            if verbose {
+                log.log("[scan] AC EVO maps present but not active — suppressing AC1/ACC check");
+            }
+            return None;
+        }
+
         match ac.ac1 {
             Some(ShmemDetection::Live) => {
                 // ACC and AC1 share the same map names — use process to distinguish.
