@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Internal
+
+- **Monorepo consolidation**: ac-teleport and sim-relay absorbed as Cargo
+  workspace crates (`crates/ac-teleport`, `crates/sim-relay`). Both external
+  repos are archived. Only iracing-teleport remains as a git submodule under
+  `deps/`. No functional changes; `git clone --recurse-submodules` still works.
+
+- **`src/source.rs` split**: 976-line monolith split into four focused modules
+  (`mod.rs`, `detection.rs`, `slot.rs`, `wreckfest.rs`) with no logic changes.
+
+---
+
 ## v0.1.5
 
 ### SimHub integration — AC games

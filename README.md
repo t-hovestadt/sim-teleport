@@ -195,18 +195,28 @@ main thread
 Crashed threads restart automatically with exponential backoff:
 2 s → 5 s → 15 s → 60 s.
 
-### Submodule architecture
+### Repository layout
 
-sim-bridge bundles three standalone crates via git submodules:
+sim-bridge is a Cargo workspace. iracing-teleport ships as a git submodule;
+ac-teleport and sim-relay live directly in the repo under `crates/`:
 
 ```
 sim-bridge/
-├── deps/iracing-teleport/teleport/  ← crate, path dep in Cargo.toml
-├── deps/ac-teleport/                ← crate, path dep
-└── deps/sim-relay/                  ← crate, path dep
+├── src/
+│   ├── source/
+│   │   ├── mod.rs        ← shared types (ShmemGame, Detection) + run()
+│   │   ├── detection.rs  ← game detection cycle and liveness checks
+│   │   ├── slot.rs       ← AppSlot lifecycle (start/drain/stop)
+│   │   └── wreckfest.rs  ← Wreckfest 2 telemetry config creation
+│   └── target/  ...
+├── crates/
+│   ├── ac-teleport/     ← workspace crate (AC1 / AC EVO / ACC)
+│   └── sim-relay/       ← workspace crate (35+ UDP games)
+└── deps/
+    └── iracing-teleport/ ← git submodule
 ```
 
-Each dep compiles as a library. sim-bridge calls their `run_source()` /
+Each crate compiles as a library. sim-bridge calls their `run_source()` /
 `run_target()` functions, passing a `shutdown: Receiver<()>` channel and
 callback closures (`on_first_data`, `on_stale`, `on_game_announce`).
 The callbacks wire each receiver to `ActiveGameTracker` and `StubManager`
@@ -326,7 +336,7 @@ Run `sim-bridge list` for the full table. Key entries:
 When telemetry from a new game first arrives on the target, sim-bridge:
 
 1. Runs `SimHubWPF.exe -switchgame <code>` to tell SimHub which game is active.
-2. Spawns stub processes (`acs.exe`, `acc.exe`, `assettocorsa_evo.exe`)
+2. Spawns stub processes (`acs.exe`, `acc.exe`, `AssettoCorsaEVO.exe`)
    so SimHub's plugin sees the expected game process running.
 3. Resets when data goes stale (stale timeout fires) so the next session
    re-triggers the switch.
@@ -775,8 +785,6 @@ before pushing any Windows-specific code.
 |------|-----|-------|
 | sim-bridge | `v0.1.5` | Stays at HEAD; moved on each release |
 | iracing-teleport | `v1.0` | Moves to HEAD on every update; never create `v1.0.x` tags |
-| ac-teleport | `v0.3` | Stays at HEAD |
-| sim-relay | `v0.1.5` | Stays at HEAD |
 
 Release workflow triggers on `push: tags: v*`. CI runs on `windows-latest`.
 The release artifact (`sim-bridge.exe`) is built with
@@ -789,5 +797,5 @@ The release artifact (`sim-bridge.exe`) is built with
 | Repo | Purpose |
 |------|---------|
 | [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) | iRacing shared-memory streaming (standalone) |
-| [ac-teleport](https://github.com/t-hovestadt/ac-teleport) | Assetto Corsa shared-memory streaming (standalone) |
-| [sim-relay](https://github.com/t-hovestadt/sim-relay) | UDP relay for 35+ games (standalone) |
+| [ac-teleport](https://github.com/t-hovestadt/ac-teleport) | Assetto Corsa shared-memory streaming — archived; absorbed into sim-bridge as `crates/ac-teleport` |
+| [sim-relay](https://github.com/t-hovestadt/sim-relay) | UDP relay for 35+ games — archived; absorbed into sim-bridge as `crates/sim-relay` |
