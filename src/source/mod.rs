@@ -47,7 +47,7 @@ fn game_label(game: Option<ShmemGame>) -> &'static str {
 
 pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string: &str) {
     if config.network.source_ip == config.network.target_ip {
-        log.log("ERROR: source_ip and target_ip are the same. source mode runs on the gaming PC, target mode runs on the SimHub PC. Check sim-bridge.toml.");
+        log.log("ERROR: source_ip and target_ip are the same. source mode runs on the gaming PC, target mode runs on the SimHub PC. Check sim-teleport.toml.");
         return;
     }
 

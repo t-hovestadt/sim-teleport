@@ -355,7 +355,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
         std::collections::HashMap::new();
     let setup_notes: RefCell<Vec<String>> = RefCell::new(Vec::new());
     if config.apps.ac_teleport_enabled {
-        let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
+        let stub_dir = std::env::temp_dir().join("sim-teleport-stubs");
         std::fs::create_dir_all(&stub_dir).ok();
         stub::setup_all_game_environments(&stub_dir, log);
         let steam_libs = steam::find_steam_libraries(&|s| {
@@ -507,7 +507,7 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>) {
     }
 
     if slots.is_empty() {
-        log.log("No apps enabled — nothing to do. Check sim-bridge.toml.");
+        log.log("No apps enabled — nothing to do. Check sim-teleport.toml.");
         return;
     }
 

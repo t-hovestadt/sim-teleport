@@ -39,7 +39,7 @@ pub struct Args {
     #[arg(skip)]
     pub on_game_active: Option<GameActiveCb>,
     /// Port offset for recv sockets. Target listens on (game_port + offset) and forwards to
-    /// 127.0.0.1:game_port where SimHub reads. Default 0; sim-bridge uses 10000.
+    /// 127.0.0.1:game_port where SimHub reads. Default 0; sim-teleport uses 10000.
     #[arg(long, default_value = "0")]
     pub port_offset: u16,
 }

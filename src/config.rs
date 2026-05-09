@@ -175,8 +175,11 @@ impl Default for Config {
     }
 }
 
-const CONFIG_FILENAME: &str = "sim-bridge.toml";
-const APPDATA_DIR: &str = "sim-bridge";
+const CONFIG_FILENAME: &str = "sim-teleport.toml";
+const APPDATA_DIR: &str = "sim-teleport";
+// Legacy filenames from the sim-bridge era — checked as fallback during migration.
+const LEGACY_CONFIG_FILENAME: &str = "sim-bridge.toml";
+const LEGACY_APPDATA_DIR: &str = "sim-bridge";
 
 /// Load config from disk without triggering the wizard. Returns None if no file exists.
 pub fn try_load() -> Option<Config> {
@@ -187,8 +190,8 @@ pub fn try_load() -> Option<Config> {
 
 pub fn write_config(config: &Config, path: &PathBuf) -> anyhow::Result<()> {
     let toml_text = format!(
-        r#"# sim-bridge configuration
-# Place next to sim-bridge.exe, or at %APPDATA%\sim-bridge\sim-bridge.toml
+        r#"# sim-teleport configuration
+# Place next to sim-teleport.exe, or at %APPDATA%\sim-teleport\sim-teleport.toml
 
 # PC role: "source" (gaming PC) or "target" (SimHub PC)
 mode = "{mode}"
@@ -277,6 +280,7 @@ ac = "{ac_code}"
 }
 
 fn find_config() -> Option<PathBuf> {
+    // Check current name first.
     let exe_path = exe_dir_config();
     if exe_path.exists() {
         return Some(exe_path);
@@ -286,7 +290,48 @@ fn find_config() -> Option<PathBuf> {
             return Some(appdata);
         }
     }
+
+    // Backward-compat: fall back to the legacy sim-bridge.toml location.
+    // Print a visible warning so the user knows to rename the file.
+    let legacy_exe = exe_dir_legacy_config();
+    if legacy_exe.exists() {
+        eprintln!(
+            "Warning: found {} — please rename it to {} (sim-bridge was renamed to sim-teleport).",
+            legacy_exe.display(),
+            exe_dir_config().display()
+        );
+        return Some(legacy_exe);
+    }
+    if let Some(legacy_appdata) = appdata_legacy_config() {
+        if legacy_appdata.exists() {
+            eprintln!(
+                "Warning: found {} — please rename it to {} and move it to {}.",
+                legacy_appdata.display(),
+                CONFIG_FILENAME,
+                appdata_config()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| format!("%APPDATA%\\{APPDATA_DIR}\\{CONFIG_FILENAME}"))
+            );
+            return Some(legacy_appdata);
+        }
+    }
+
     None
+}
+
+fn exe_dir_legacy_config() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(LEGACY_CONFIG_FILENAME)))
+        .unwrap_or_else(|| PathBuf::from(LEGACY_CONFIG_FILENAME))
+}
+
+fn appdata_legacy_config() -> Option<PathBuf> {
+    std::env::var("APPDATA").ok().map(|appdata| {
+        PathBuf::from(appdata)
+            .join(LEGACY_APPDATA_DIR)
+            .join(LEGACY_CONFIG_FILENAME)
+    })
 }
 
 fn exe_dir_config() -> PathBuf {
@@ -307,7 +352,7 @@ fn appdata_config() -> Option<PathBuf> {
 pub fn setup_wizard() -> anyhow::Result<Config> {
     let mut config = Config::default();
 
-    println!("=== sim-bridge setup ===");
+    println!("=== sim-teleport setup ===");
     println!();
 
     // Connection type — determines whether unicast is needed.
@@ -399,7 +444,7 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
     }
 
     println!();
-    println!("Tip: Place sim-bridge.exe in a user-writable folder like C:\\Simracing\\");
+    println!("Tip: Place sim-teleport.exe in a user-writable folder like C:\\Simracing\\");
     println!("     (not in Program Files). The log and config are written next to the exe.");
 
     let save_path = exe_dir_config();
@@ -412,8 +457,8 @@ pub fn setup_wizard() -> anyhow::Result<Config> {
         println!("Both PCs must be on the same network.");
     }
     println!();
-    println!("To start now:     sim-bridge {}", config.mode);
-    println!("To start on boot: sim-bridge install");
+    println!("To start now:     sim-teleport {}", config.mode);
+    println!("To start on boot: sim-teleport install");
 
     Ok(config)
 }

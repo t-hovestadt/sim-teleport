@@ -112,8 +112,8 @@ impl SessionReport {
 fn report_path() -> PathBuf {
     std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join("sim-bridge-report.txt")))
-        .unwrap_or_else(|| PathBuf::from("sim-bridge-report.txt"))
+        .and_then(|p| p.parent().map(|d| d.join("sim-teleport-report.txt")))
+        .unwrap_or_else(|| PathBuf::from("sim-teleport-report.txt"))
 }
 
 fn write_to(f: &mut impl Write, r: &SessionReport) -> std::io::Result<()> {
@@ -126,7 +126,7 @@ fn write_to(f: &mut impl Write, r: &SessionReport) -> std::io::Result<()> {
         .unwrap_or(now);
     let duration_secs = (now - r.start_time).num_seconds().max(0) as u64;
 
-    writeln!(f, "=== sim-bridge session report ===")?;
+    writeln!(f, "=== sim-teleport session report ===")?;
     writeln!(f, "Version: {}", r.version_string)?;
     writeln!(f, "Mode: source")?;
     writeln!(f, "Config: {}", r.config_summary)?;
@@ -256,7 +256,7 @@ fn write_to(f: &mut impl Write, r: &SessionReport) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Write a one-shot target-mode setup report to `sim-bridge-target-report.txt`
+/// Write a one-shot target-mode setup report to `sim-teleport-target-report.txt`
 /// next to the executable.
 ///
 /// `notes` is the ordered list of `[steam]` and related log lines collected
@@ -265,15 +265,15 @@ fn write_to(f: &mut impl Write, r: &SessionReport) -> std::io::Result<()> {
 pub fn write_target_setup_report(notes: &[String], log: &Logger) {
     let path = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join("sim-bridge-target-report.txt")))
-        .unwrap_or_else(|| PathBuf::from("sim-bridge-target-report.txt"));
+        .and_then(|p| p.parent().map(|d| d.join("sim-teleport-target-report.txt")))
+        .unwrap_or_else(|| PathBuf::from("sim-teleport-target-report.txt"));
 
     let now = Local::now();
     let version = env!("CARGO_PKG_VERSION");
 
     let mut out = String::new();
     out.push_str(&format!(
-        "sim-bridge {version} — target setup report\nGenerated: {}\n\n",
+        "sim-teleport {version} — target setup report\nGenerated: {}\n\n",
         now.format("%Y-%m-%d %H:%M:%S %z")
     ));
     out.push_str("=== Steam / SimHub setup ===\n");

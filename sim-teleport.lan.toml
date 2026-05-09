@@ -1,14 +1,14 @@
-# sim-bridge — LAN config (optional)
+# sim-teleport — LAN config (optional)
 # Both PCs on the same network through a router or switch.
 #
-# This file is OPTIONAL. sim-bridge works without it:
-#   sim-bridge.exe source       (gaming PC — multicast, all apps enabled)
-#   sim-bridge.exe target       (SimHub PC)
+# This file is OPTIONAL. sim-teleport works without it:
+#   sim-teleport.exe source       (gaming PC — multicast, all apps enabled)
+#   sim-teleport.exe target       (SimHub PC)
 #
 # Use this file if you want to persist settings across runs, or if you
 # prefer config-file style over CLI flags.
 #
-# Rename to sim-bridge.toml and place next to sim-bridge.exe.
+# Rename to sim-teleport.toml and place next to sim-teleport.exe.
 # CLI flags (in the bat file) override values set here.
 
 mode = "source"

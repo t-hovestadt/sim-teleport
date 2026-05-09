@@ -1,6 +1,8 @@
-const TASK_NAME: &str = "SimBridge";
+const TASK_NAME: &str = "SimTeleport";
+// Legacy task name created by earlier releases (sim-bridge). Cleaned up in uninstall.
+const LEGACY_TASK_NAME: &str = "SimBridge";
 
-/// Register sim-bridge in Windows Task Scheduler to start on logon at highest privilege.
+/// Register sim-teleport in Windows Task Scheduler to start on logon at highest privilege.
 /// `mode` should be "source" or "target".
 pub fn install(mode: &str) -> anyhow::Result<()> {
     let exe = std::env::current_exe()?;
@@ -15,9 +17,9 @@ pub fn install(mode: &str) -> anyhow::Result<()> {
 
     if status.success() {
         println!("Registered Task Scheduler entry \"{}\".", TASK_NAME);
-        println!("sim-bridge will start automatically when you log on.");
+        println!("sim-teleport will start automatically when you log on.");
         println!();
-        println!("To remove: sim-bridge uninstall");
+        println!("To remove: sim-teleport uninstall");
     } else {
         anyhow::bail!(
             "schtasks /create failed (exit code {:?}). Try running as Administrator.",
@@ -27,7 +29,8 @@ pub fn install(mode: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Remove the sim-bridge Task Scheduler entry.
+/// Remove the sim-teleport Task Scheduler entry.
+/// Also removes the legacy "SimBridge" entry left by earlier releases.
 pub fn uninstall() -> anyhow::Result<()> {
     let status = std::process::Command::new("schtasks")
         .args(["/delete", "/tn", TASK_NAME, "/f"])
@@ -41,5 +44,20 @@ pub fn uninstall() -> anyhow::Result<()> {
             status.code()
         );
     }
+
+    // Best-effort cleanup of the legacy "SimBridge" entry. Ignore errors — the
+    // entry may not exist on systems that never ran an older release.
+    let _ = std::process::Command::new("schtasks")
+        .args(["/delete", "/tn", LEGACY_TASK_NAME, "/f"])
+        .status()
+        .map(|s| {
+            if s.success() {
+                println!(
+                    "Also removed legacy Task Scheduler entry \"{}\".",
+                    LEGACY_TASK_NAME
+                );
+            }
+        });
+
     Ok(())
 }

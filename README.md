@@ -1,4 +1,4 @@
-# sim-bridge
+# sim-teleport
 
 Unified telemetry bridge for sim racing. One binary handles iRacing,
 Assetto Corsa (EVO, AC1, ACC), and 35+ UDP games (F1, Forza, BeamNG,
@@ -8,7 +8,7 @@ iRacing and Assetto Corsa work on LAN with zero configuration. Direct
 ethernet or UDP relay games need two IPs in the bat file.
 
 ```
-  Gaming PC (sim-bridge source)               SimHub PC (sim-bridge target)
+  Gaming PC (sim-teleport source)               SimHub PC (sim-teleport target)
 
   ┌────────────────────────┐                  ┌────────────────────────────┐
   │  iRacing               │                  │  iRacing Teleport  :5000   │
@@ -30,11 +30,11 @@ Download from the [Releases](../../releases/latest) page:
 
 | File | Description |
 |------|-------------|
-| `sim-bridge.exe` | Copy to both PCs |
+| `sim-teleport.exe` | Copy to both PCs |
 | `start-source.bat` | Gaming PC — edit IPs, double-click to run |
 | `start-target.bat` | SimHub PC — double-click to run |
-| `sim-bridge.lan.toml` | Config template for LAN (multicast) setup |
-| `sim-bridge.direct.toml` | Config template for direct ethernet |
+| `sim-teleport.lan.toml` | Config template for LAN (multicast) setup |
+| `sim-teleport.direct.toml` | Config template for direct ethernet |
 
 ---
 
@@ -56,7 +56,7 @@ Or click **More info** on the SmartScreen dialog, then **Run anyway**.
 ```batch
 @echo off
 cd /d "%~dp0"
-sim-bridge.exe source
+sim-teleport.exe source
 pause
 ```
 
@@ -64,11 +64,11 @@ pause
 ```batch
 @echo off
 cd /d "%~dp0"
-sim-bridge.exe target
+sim-teleport.exe target
 pause
 ```
 
-Copy `sim-bridge.exe` and the appropriate bat file to each PC. Double-click
+Copy `sim-teleport.exe` and the appropriate bat file to each PC. Double-click
 to run. iRacing and Assetto Corsa (EVO, AC1, ACC) work via multicast — no
 IPs needed.
 
@@ -76,7 +76,7 @@ To also forward UDP relay games (F1, Forza, BeamNG, etc.), add your SimHub
 PC's IP so sim-relay knows where to send:
 
 ```batch
-sim-bridge.exe source --target 192.168.50.2
+sim-teleport.exe source --target 192.168.50.2
 ```
 
 ---
@@ -97,7 +97,7 @@ adapter → Properties → IPv4 → Use the following IP address*.
 ```batch
 @echo off
 cd /d "%~dp0"
-sim-bridge.exe source --unicast --target 192.168.50.2 --bind 192.168.50.1
+sim-teleport.exe source --unicast --target 192.168.50.2 --bind 192.168.50.1
 pause
 ```
 
@@ -105,7 +105,7 @@ pause
 ```batch
 @echo off
 cd /d "%~dp0"
-sim-bridge.exe target --unicast --source 192.168.50.1 --high-priority --busy-wait
+sim-teleport.exe target --unicast --source 192.168.50.1 --high-priority --busy-wait
 pause
 ```
 
@@ -115,18 +115,18 @@ use them on the gaming PC — they compete with the game.
 
 ### Firewall rules
 
-Run `sim-bridge firewall` for copy-paste PowerShell commands. Manually:
+Run `sim-teleport firewall` for copy-paste PowerShell commands. Manually:
 
 **Gaming PC** (receives iRacing/AC resync packets):
 ```powershell
-New-NetFirewallRule -DisplayName "sim-bridge source" `
+New-NetFirewallRule -DisplayName "sim-teleport source" `
     -Direction Inbound -Protocol UDP -LocalPort 5000,5001 -Action Allow
 ```
 
 **SimHub PC** (receives telemetry + relay data). sim-relay traffic arrives
 on `game_port + 10000` (default offset) to avoid binding conflicts with SimHub:
 ```powershell
-New-NetFirewallRule -DisplayName "sim-bridge target" `
+New-NetFirewallRule -DisplayName "sim-teleport target" `
     -Direction Inbound -Protocol UDP `
     -LocalPort 5000,5001,15300,15606,19876,19999,25151,30777,33123,35555,40000,43740,44380,59003 `
     -Action Allow
@@ -168,7 +168,7 @@ in first so the adapter shows a link, then set the IP. To reset:
 
 ### What runs where
 
-**Source PC** runs one game at a time. sim-bridge detects which game is
+**Source PC** runs one game at a time. sim-teleport detects which game is
 active (by probing shared memory or scanning running processes) and forwards
 only that game's telemetry to the target. Priority order when multiple games
 are detected: iRacing > AC variants > UDP relay games.
@@ -197,11 +197,11 @@ Crashed threads restart automatically with exponential backoff:
 
 ### Repository layout
 
-sim-bridge is a Cargo workspace. iracing-teleport ships as a git submodule;
+sim-teleport is a Cargo workspace. iracing-teleport ships as a git submodule;
 ac-teleport and sim-relay live directly in the repo under `crates/`:
 
 ```
-sim-bridge/
+sim-teleport/
 ├── src/
 │   ├── source/
 │   │   ├── mod.rs        ← shared types (ShmemGame, Detection) + run()
@@ -216,7 +216,7 @@ sim-bridge/
     └── iracing-teleport/ ← git submodule
 ```
 
-Each crate compiles as a library. sim-bridge calls their `run_source()` /
+Each crate compiles as a library. sim-teleport calls their `run_source()` /
 `run_target()` functions, passing a `shutdown: Receiver<()>` channel and
 callback closures (`on_first_data`, `on_stale`, `on_game_announce`).
 The callbacks wire each receiver to `ActiveGameTracker` and `StubManager`
@@ -268,7 +268,7 @@ checks for `acc.exe` vs `acs.exe` to distinguish ACC from AC1.
 ### 3-scan liveness rule
 
 A game must be missing from detection for **3 consecutive scan cycles**
-(default: 9 seconds) before sim-bridge sends a shutdown signal to the
+(default: 9 seconds) before sim-teleport sends a shutdown signal to the
 telemetry thread. This prevents rapid start/stop loops from process
 flickering during AC session transitions (the AC launcher spawns and kills
 several child processes when loading a session — transient absences of
@@ -312,7 +312,7 @@ giving SimHub time to receive the final frame before the source goes silent.
 
 **UDP relay (35+ games via sim-relay):**
 
-Run `sim-bridge list` for the full table. Key entries:
+Run `sim-teleport list` for the full table. Key entries:
 
 | Game | Port | SimHub code |
 |------|------|-------------|
@@ -333,7 +333,7 @@ Run `sim-bridge list` for the full table. Key entries:
 
 ## SimHub integration (target PC)
 
-When telemetry from a new game first arrives on the target, sim-bridge:
+When telemetry from a new game first arrives on the target, sim-teleport:
 
 1. Runs `SimHubWPF.exe -switchgame <code>` to tell SimHub which game is active.
 2. Spawns stub processes (`acs.exe`, `acc.exe`, `AssettoCorsaEVO.exe`)
@@ -343,7 +343,7 @@ When telemetry from a new game first arrives on the target, sim-bridge:
 
 ### SimHub auto-configuration
 
-On the first run of `sim-bridge target`, it writes SimHub's
+On the first run of `sim-teleport target`, it writes SimHub's
 `GameSettings.json` so each game skips the "not configured" prompt, and
 `HiddenGames.json` so the games appear in SimHub's game list. If changes
 were written, the log prints:
@@ -369,13 +369,13 @@ its shared-memory reader. On the target PC no game process runs, so without
 stubs SimHub silently skips reading shared memory even though the maps are
 populated.
 
-sim-bridge copies itself to the game's expected location and renames it
+sim-teleport copies itself to the game's expected location and renames it
 (e.g., `acs.exe`). When spawned with the `stub` argument, the copy just
 sleeps forever. From SimHub's perspective, the process is running. When data
-goes stale or sim-bridge shuts down, the stubs are killed.
+goes stale or sim-teleport shuts down, the stubs are killed.
 
 A Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) ensures stubs
-are killed even if sim-bridge crashes — when the job handle is closed by the
+are killed even if sim-teleport crashes — when the job handle is closed by the
 OS on process termination, Windows kills all processes in the job.
 
 **Stub placement**: stubs must live in the same directory that the Steam
@@ -392,9 +392,9 @@ is on disk (real or stub-written) and passes those exact paths to
 
 SimHub's ACManager reads game install paths from Steam's `appmanifest_*.acf`
 files, not from the Windows registry. On the target PC where no games are
-installed, sim-bridge writes fake ACF files so ACManager finds a valid path.
+installed, sim-teleport writes fake ACF files so ACManager finds a valid path.
 
-At startup, `sim-bridge target`:
+At startup, `sim-teleport target`:
 1. Finds Steam via `HKEY_LOCAL_MACHINE\SOFTWARE\Valve\Steam\InstallPath`
    (or the WOW64 path for 32-bit Steam on 64-bit Windows).
 2. Reads `steamapps\libraryfolders.vdf` to discover all Steam library roots.
@@ -406,7 +406,7 @@ At startup, `sim-bridge target`:
 6. On shutdown, removes any ACF files it created.
 
 If the game is genuinely installed (>10 files in the common directory),
-the real ACF is left untouched and sim-bridge reads the real `installdir`.
+the real ACF is left untouched and sim-teleport reads the real `installdir`.
 
 ### AC1 fake install structure
 
@@ -415,15 +415,15 @@ The following files are created in `steamapps\common\assettocorsa\`
 
 ```
 assettocorsa\
-├── acs.exe                          ← stub executable (copy of sim-bridge.exe)
+├── acs.exe                          ← stub executable (copy of sim-teleport.exe)
 ├── cfg\
 │   └── python.ini                  ← [SIMHUB]\r\nACTIVE=1\r\n[SIMHUB_LOG]\r\nACTIVE=0
 ├── system\cfg\
 │   └── assetto_corsa.ini           ← [SETTINGS]\r\n
 ├── apps\python\SimHub\
-│   ├── SimHub.py                   ← # sim-bridge stub
-│   ├── simhub_shared_mem.py        ← # sim-bridge stub
-│   └── __init__.py                 ← # sim-bridge stub
+│   ├── SimHub.py                   ← # sim-teleport stub
+│   ├── simhub_shared_mem.py        ← # sim-teleport stub
+│   └── __init__.py                 ← # sim-teleport stub
 └── content\
     ├── cars\                        ← empty (existence check)
     ├── tracks\                      ← empty
@@ -499,7 +499,7 @@ firmware.
 
 **Important nuance**: this only fires on a **clean shutdown signal** (Ctrl-C,
 Task Manager end task, or the `TargetSlot::stop()` shutdown channel). If
-sim-bridge is killed via `TerminateProcess` (e.g., machine power loss), the
+sim-teleport is killed via `TerminateProcess` (e.g., machine power loss), the
 memory is not zeroed. The stale timeout (default 10 s) handles this case on
 the target — after 10 s of no data the maps are zeroed.
 
@@ -515,9 +515,9 @@ shutdown signal from the source (game process exited), not on stale detection.
 
 ### Wreckfest 2
 
-Wreckfest 2 does not send telemetry by default. sim-bridge source creates
+Wreckfest 2 does not send telemetry by default. sim-teleport source creates
 `config.json` automatically if you have run Wreckfest 2 at least once (so
-the save directory exists). Restart the game after sim-bridge creates it.
+the save directory exists). Restart the game after sim-teleport creates it.
 
 If you prefer to create it manually:
 
@@ -538,7 +538,7 @@ Path: `%USERPROFILE%\Documents\My Games\Wreckfest 2\<SteamID>\savegame\telemetry
 `<SteamID>` is the numbered folder inside `My Games\Wreckfest 2\`. Restart
 the game after creating the file.
 
-**Port offset note**: sim-bridge forwards Wreckfest 2 on port
+**Port offset note**: sim-teleport forwards Wreckfest 2 on port
 `23123 + 10000 = 33123` (default offset). The firewall rule on the SimHub PC
 must include 33123.
 
@@ -561,7 +561,7 @@ to the source to always forward port 33740.
 ## SimHub in-game app note
 
 SimHub's Assetto Corsa in-game app creates `acpmf_simhub_v2` for opponent
-tracking. This map is not forwarded by sim-bridge — only the three core maps
+tracking. This map is not forwarded by sim-teleport — only the three core maps
 (`acpmf_physics`, `acpmf_graphics`, `acpmf_static`) are forwarded.
 
 What works: speed, RPM, gear, throttle/brake, temperatures, tyre data, lap
@@ -572,14 +572,14 @@ leaderboard overlays that read `acpmf_simhub_v2`.
 
 ## Session reports
 
-**Source** writes `sim-bridge-report.txt` next to the exe every 60 seconds
+**Source** writes `sim-teleport-report.txt` next to the exe every 60 seconds
 and on clean shutdown. Contents:
 - Header: version, mode, config summary, start time, total runtime
 - Detection summary: scan counts, probe hits, tiebreaker stats per game
 - Session history: which game ran, how it was detected, start/stop times
 - Errors and warnings logged during the session
 
-**Target** writes `sim-bridge-target-report.txt` at startup (once). Contents:
+**Target** writes `sim-teleport-target-report.txt` at startup (once). Contents:
 - Steam library paths found
 - Per-game ACF status (written, skipped because real install present, or
   Steam not found)
@@ -591,7 +591,7 @@ Both files are plain text, readable in any editor.
 
 ## CLI reference
 
-### `sim-bridge source [OPTIONS]`
+### `sim-teleport source [OPTIONS]`
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -610,7 +610,7 @@ Both files are plain text, readable in any editor.
 | `--verbose` | off | Print detailed detection results each cycle. |
 | `--port-offset <N>` | `10000` | Port offset for sim-relay (target listens on `game_port + N`). |
 
-### `sim-bridge target [OPTIONS]`
+### `sim-teleport target [OPTIONS]`
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -630,23 +630,23 @@ Both files are plain text, readable in any editor.
 
 | Command | Description |
 |---------|-------------|
-| `sim-bridge setup` | Interactive config wizard — creates `sim-bridge.toml`. |
-| `sim-bridge install [--mode source\|target]` | Register auto-start at Windows logon (Task Scheduler, runs at highest privilege). |
-| `sim-bridge uninstall` | Remove auto-start. |
-| `sim-bridge list [--verbose]` | Show all supported games. |
-| `sim-bridge firewall` | Print copy-paste PowerShell firewall rules. |
-| `sim-bridge --version` | Show version including sub-app versions. |
-| `sim-bridge stub` | *Internal.* Sleep forever. Used as the renamed stub process. |
+| `sim-teleport setup` | Interactive config wizard — creates `sim-teleport.toml`. |
+| `sim-teleport install [--mode source\|target]` | Register auto-start at Windows logon (Task Scheduler, runs at highest privilege). |
+| `sim-teleport uninstall` | Remove auto-start. |
+| `sim-teleport list [--verbose]` | Show all supported games. |
+| `sim-teleport firewall` | Print copy-paste PowerShell firewall rules. |
+| `sim-teleport --version` | Show version including sub-app versions. |
+| `sim-teleport stub` | *Internal.* Sleep forever. Used as the renamed stub process. |
 
 ---
 
 ## Configuration file
 
-CLI flags always override `sim-bridge.toml`. Run `sim-bridge setup` for a
+CLI flags always override `sim-teleport.toml`. Run `sim-teleport setup` for a
 guided wizard, or create the file manually:
 
 ```toml
-# sim-bridge.toml — example for direct ethernet
+# sim-teleport.toml — example for direct ethernet
 
 [network]
 unicast    = true
@@ -665,7 +665,7 @@ busy_wait     = true
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `mode` | `"source"` | `"source"` or `"target"`. Used by `sim-bridge install`. |
+| `mode` | `"source"` | `"source"` or `"target"`. Used by `sim-teleport install`. |
 | `network.unicast` | `false` | `true` = unicast (direct cable). `false` = multicast (LAN). |
 | `network.source_ip` | `"192.168.50.1"` | Gaming PC IP. |
 | `network.target_ip` | `"192.168.50.2"` | SimHub PC IP. |
@@ -712,21 +712,21 @@ Built-in SimHub codes (no config needed):
 ## Auto-start (Task Scheduler)
 
 ```
-sim-bridge install                    # mode from sim-bridge.toml, or "source"
-sim-bridge install --mode target      # force target mode
-sim-bridge uninstall
+sim-teleport install                    # mode from sim-teleport.toml, or "source"
+sim-teleport install --mode target      # force target mode
+sim-teleport uninstall
 ```
 
-Run as Administrator. The registered command is `sim-bridge.exe source` (or
-`target`) with no flags — persistent settings come from `sim-bridge.toml`.
+Run as Administrator. The registered command is `sim-teleport.exe source` (or
+`target`) with no flags — persistent settings come from `sim-teleport.toml`.
 
 ---
 
 ## Running SimHub locally
 
-If SimHub is also on the gaming PC, `sim-bridge source` sends the same
+If SimHub is also on the gaming PC, `sim-teleport source` sends the same
 data to the remote SimHub PC independently — no conflict. Do not run
-`sim-bridge target` on the gaming PC — it creates shared-memory maps with
+`sim-teleport target` on the gaming PC — it creates shared-memory maps with
 the same names as the game, which conflicts.
 
 ---
@@ -736,8 +736,8 @@ the same names as the game, which conflicts.
 Requires Rust (stable). CI builds on `windows-latest`.
 
 ```
-git clone --recurse-submodules https://github.com/t-hovestadt/sim-bridge.git
-cd sim-bridge
+git clone --recurse-submodules https://github.com/t-hovestadt/sim-teleport.git
+cd sim-teleport
 cargo build --release
 ```
 
@@ -763,10 +763,10 @@ before pushing any Windows-specific code.
 
 | Symptom | Cause / Fix |
 |---------|-------------|
-| SimHub shows no AC telemetry after first run | Restart SimHub — `sim-bridge target` updated GameSettings.json. |
+| SimHub shows no AC telemetry after first run | Restart SimHub — `sim-teleport target` updated GameSettings.json. |
 | `[SimHub] Configuration updated` on every run | SimHub restoring defaults; try a newer SimHub version. |
 | `[simhub] switched to …` missing | `SimHubWPF.exe` not found at default path; set `simhub.path` in config. |
-| AC EVO shows "waiting for data" in SimHub | Stub placed in wrong directory; check `sim-bridge-target-report.txt` for `[steam] stub dir:` line. |
+| AC EVO shows "waiting for data" in SimHub | Stub placed in wrong directory; check `sim-teleport-target-report.txt` for `[steam] stub dir:` line. |
 | SimHub shows wrong game overlay | Game not in built-in code table; add to `[simhub.relay]`. |
 | AC1 NullReferenceException in SimHub | Fake install incomplete; check target log for `[steam]` errors. |
 | 0.2 msg/s on AC EVO (vs 60+ for AC1) | EVO game is on the menu, not in a session — `packetId` only advances in-session. Normal behavior. |
@@ -775,7 +775,7 @@ before pushing any Windows-specific code.
 | Wreckfest 2 not detected | `config.json` missing or game not restarted after creation. Check source log for `Created telemetry config`. |
 | `[Wreckfest 2] Created telemetry config` | Restart Wreckfest 2 to activate telemetry — it only reads config on launch. |
 | BeamNG OutGauge (port 63392) not working | Port overflows at `relay_port_offset = 10000`. Set `apps.relay_port_offset` to ≤ 2143. |
-| Task Scheduler: sim-bridge starts but does nothing | Config flags are only read from `sim-bridge.toml` in auto-start mode; check that file is present next to the exe. |
+| Task Scheduler: sim-teleport starts but does nothing | Config flags are only read from `sim-teleport.toml` in auto-start mode; check that file is present next to the exe. |
 
 ---
 
@@ -783,11 +783,11 @@ before pushing any Windows-specific code.
 
 | Repo | Tag | Notes |
 |------|-----|-------|
-| sim-bridge | `v0.1.5` | Stays at HEAD; moved on each release |
+| sim-teleport | `v0.1.5` | Stays at HEAD; moved on each release |
 | iracing-teleport | `v1.0` | Moves to HEAD on every update; never create `v1.0.x` tags |
 
 Release workflow triggers on `push: tags: v*`. CI runs on `windows-latest`.
-The release artifact (`sim-bridge.exe`) is built with
+The release artifact (`sim-teleport.exe`) is built with
 `--target x86_64-pc-windows-msvc`.
 
 ---
@@ -797,5 +797,5 @@ The release artifact (`sim-bridge.exe`) is built with
 | Repo | Purpose |
 |------|---------|
 | [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) | iRacing shared-memory streaming (standalone) |
-| [ac-teleport](https://github.com/t-hovestadt/ac-teleport) | Assetto Corsa shared-memory streaming — archived; absorbed into sim-bridge as `crates/ac-teleport` |
-| [sim-relay](https://github.com/t-hovestadt/sim-relay) | UDP relay for 35+ games — archived; absorbed into sim-bridge as `crates/sim-relay` |
+| [ac-teleport](https://github.com/t-hovestadt/ac-teleport) | Assetto Corsa shared-memory streaming — archived; absorbed into sim-teleport as `crates/ac-teleport` |
+| [sim-relay](https://github.com/t-hovestadt/sim-relay) | UDP relay for 35+ games — archived; absorbed into sim-teleport as `crates/sim-relay` |

@@ -480,7 +480,7 @@ pub fn print_list() {
     println!("\nNOT SUPPORTED:");
     println!(
         "  assetto-corsa-evo  — uses shared memory (not UDP). \
-         Use ac-teleport or sim-bridge instead."
+         Use ac-teleport or sim-teleport instead."
     );
     println!("  assetto-corsa      — stateful handshake UDP; cannot be transparently forwarded.");
     println!("  assetto-corsa-rally — likely shared memory (research inconclusive).");

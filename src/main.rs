@@ -19,7 +19,7 @@ const RELAY_VERSION: &str = env!("SIM_RELAY_VERSION");
 
 #[derive(Parser)]
 #[command(
-    name = "sim-bridge",
+    name = "sim-teleport",
     version = concat!(
         env!("CARGO_PKG_VERSION"),
         " (iracing-teleport ", env!("IRACING_TELEPORT_VERSION"),
@@ -116,16 +116,16 @@ enum Cmd {
         #[arg(long, value_name = "N")]
         port_offset: Option<u16>,
     },
-    /// Interactive setup wizard. Writes sim-bridge.toml (optional — CLI flags work without it).
+    /// Interactive setup wizard. Writes sim-teleport.toml (optional — CLI flags work without it).
     Setup,
-    /// Add sim-bridge to Windows startup (Task Scheduler, runs on logon).
+    /// Add sim-teleport to Windows startup (Task Scheduler, runs on logon).
     Install {
         /// Which mode to register: source (gaming PC) or target (SimHub PC).
-        /// Defaults to the mode stored in sim-bridge.toml, or "source" if no config.
+        /// Defaults to the mode stored in sim-teleport.toml, or "source" if no config.
         #[arg(long, value_name = "MODE")]
         mode: Option<String>,
     },
-    /// Remove sim-bridge from Windows startup.
+    /// Remove sim-teleport from Windows startup.
     Uninstall,
     /// List all supported games (iRacing, AC family, and all sim-relay UDP games).
     List {
@@ -277,7 +277,7 @@ fn run_source(
         logger::Logger::stderr()
     });
     log.log(&format!(
-        "sim-bridge v{VERSION} — source (teleport={TELEPORT_VERSION}, ac={AC_VERSION}, relay={RELAY_VERSION})"
+        "sim-teleport v{VERSION} — source (teleport={TELEPORT_VERSION}, ac={AC_VERSION}, relay={RELAY_VERSION})"
     ));
 
     // Priority: CLI flags > toml > built-in defaults.
@@ -359,7 +359,7 @@ fn run_target(
         logger::Logger::stderr()
     });
     log.log(&format!(
-        "sim-bridge v{VERSION} — target (teleport={TELEPORT_VERSION}, ac={AC_VERSION}, relay={RELAY_VERSION})"
+        "sim-teleport v{VERSION} — target (teleport={TELEPORT_VERSION}, ac={AC_VERSION}, relay={RELAY_VERSION})"
     ));
 
     // Priority: CLI flags > toml > built-in defaults.
@@ -413,7 +413,7 @@ fn run_setup() {
     match config::setup_wizard() {
         Ok(cfg) => {
             if cfg.apps.ac_teleport_enabled {
-                let stub_dir = std::env::temp_dir().join("sim-bridge-stubs");
+                let stub_dir = std::env::temp_dir().join("sim-teleport-stubs");
                 std::fs::create_dir_all(&stub_dir).ok();
                 let log = logger::Logger::stderr();
                 stub::setup_all_game_environments(&stub_dir, &log);
@@ -462,10 +462,10 @@ fn run_uninstall() {
 
 fn run_list(verbose: bool) {
     let cfg = config::try_load().unwrap_or_default();
-    println!("sim-bridge — Supported Games");
+    println!("sim-teleport — Supported Games");
     println!();
     if verbose {
-        println!("Shared Memory (auto-detected, started by sim-bridge source):");
+        println!("Shared Memory (auto-detected, started by sim-teleport source):");
         println!("  {:<35} {:<40} Port", "Game", "Detection");
         println!("  {}", "-".repeat(85));
         println!(
@@ -496,7 +496,7 @@ fn run_list(verbose: bool) {
             println!("  {:<35} {:<8} {}", game.name, port, names);
         }
     } else {
-        println!("Shared Memory (auto-detected, started by sim-bridge source):");
+        println!("Shared Memory (auto-detected, started by sim-teleport source):");
         println!("  {:<35} {:<35} Port", "Game", "Process");
         println!("  {}", "-".repeat(80));
         println!(
@@ -550,14 +550,14 @@ fn run_firewall() {
     }
     println!("# Gaming PC (receives resync packets from SimHub PC):");
     println!();
-    println!("New-NetFirewallRule -DisplayName \"sim-bridge source\" `");
+    println!("New-NetFirewallRule -DisplayName \"sim-teleport source\" `");
     println!(
         "    -Direction Inbound -Protocol UDP -LocalPort {iracing_port},{ac_port} -Action Allow"
     );
     println!();
     println!("# SimHub PC (receives telemetry from gaming PC):");
     println!();
-    println!("New-NetFirewallRule -DisplayName \"sim-bridge target\" `");
+    println!("New-NetFirewallRule -DisplayName \"sim-teleport target\" `");
     println!(
         "    -Direction Inbound -Protocol UDP -LocalPort {iracing_port},{ac_port},{relay_port_list} -Action Allow"
     );

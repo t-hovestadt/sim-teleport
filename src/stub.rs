@@ -1,8 +1,8 @@
 //! StubManager: spawn short-lived named processes so SimHub's plugin process-check passes.
 //!
 //! SimHub's AC plugins call IsProcessRunning before reading shared memory. On the target PC
-//! no game process exists, so the plugins silently skip telemetry even after sim-bridge has
-//! populated the maps. Spawning a copy of sim-bridge.exe named acs.exe / acc.exe /
+//! no game process exists, so the plugins silently skip telemetry even after sim-teleport has
+//! populated the maps. Spawning a copy of sim-teleport.exe named acs.exe / acc.exe /
 //! AssettoCorsaEVO.exe satisfies the check.
 //!
 //! When Steam libraries are found, stubs are placed inside the Steam common directories that
@@ -10,10 +10,10 @@
 //! ensures SimHub's FindProcessPath → GetDirectoryName resolves to the same path that Steam's
 //! ACManager reads from the appmanifest — preventing NullReferenceException.
 //!
-//! Falls back to %TEMP%\sim-bridge-stubs\{game}\ when Steam is not found.
+//! Falls back to %TEMP%\sim-teleport-stubs\{game}\ when Steam is not found.
 //!
 //! A Windows Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE ensures stubs are killed
-//! even if sim-bridge crashes (handles are closed by the OS on process termination).
+//! even if sim-teleport crashes (handles are closed by the OS on process termination).
 
 #[cfg(windows)]
 use std::collections::HashMap;
@@ -50,7 +50,7 @@ pub struct StubManager {
 impl StubManager {
     /// `game_dirs` — map from stub name ("acs", "acc", "AssettoCorsaEVO") to the
     /// actual game install directory read from the appmanifest ACF. Pass an empty map
-    /// to fall back to `%TEMP%\sim-bridge-stubs\` placement.
+    /// to fall back to `%TEMP%\sim-teleport-stubs\` placement.
     pub fn new(
         log: Logger,
         game_dirs: std::collections::HashMap<String, std::path::PathBuf>,
@@ -144,7 +144,7 @@ impl StubManager {
         // Steam is absent or the game has no ACF entry.
         let game_dir = self.game_dirs.get(name).cloned().unwrap_or_else(|| {
             std::env::temp_dir()
-                .join("sim-bridge-stubs")
+                .join("sim-teleport-stubs")
                 .join(game_subdir)
         });
         std::fs::create_dir_all(&game_dir).ok()?;
@@ -175,7 +175,7 @@ impl StubManager {
             .spawn()
             .ok()?;
 
-        // Assign to job object so it's killed automatically when sim-bridge exits.
+        // Assign to job object so it's killed automatically when sim-teleport exits.
         if self.job != 0 {
             unsafe {
                 AssignProcessToJobObject(self.job, child.as_raw_handle() as HANDLE);
@@ -216,7 +216,7 @@ fn setup_ac1_environment(stub_dir: &Path, log: &Logger) {
     for fname in &["SimHub.py", "simhub_shared_mem.py", "__init__.py"] {
         let py = game_dir.join("apps/python/SimHub").join(fname);
         if !py.exists() {
-            std::fs::write(&py, "# sim-bridge stub\r\n").ok();
+            std::fs::write(&py, "# sim-teleport stub\r\n").ok();
         }
     }
 

@@ -7,7 +7,7 @@ use clap::Parser;
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::games::PortGroup;
-// ProcessScanner is also implemented independently in sim-bridge/src/scanner.rs.
+// ProcessScanner is also implemented independently in sim-teleport/src/scanner.rs.
 // The duplication is intentional: each crate is self-contained and has no
 // dependency on the other at the library level.
 use crate::platform::{boost_thread_priority, set_high_priority, HighResTimer, ProcessScanner};
@@ -48,7 +48,7 @@ pub struct Args {
     #[arg(long)]
     pub force_bind: bool,
     /// Port offset added to target address. Source sends to target:(game_port + offset).
-    /// Default 0 (standalone); sim-bridge uses 10000 to avoid SimHub binding conflict.
+    /// Default 0 (standalone); sim-teleport uses 10000 to avoid SimHub binding conflict.
     #[arg(long, default_value = "0")]
     pub port_offset: u16,
 }

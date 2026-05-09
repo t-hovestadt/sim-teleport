@@ -482,7 +482,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
-name = "sim-bridge"
+name = "sim-relay"
+version = "0.1.5"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "socket2",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "sim-teleport"
 version = "0.1.5"
 dependencies = [
  "ac-teleport",
@@ -495,16 +505,6 @@ dependencies = [
  "sim-relay",
  "teleport",
  "toml",
- "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "sim-relay"
-version = "0.1.5"
-dependencies = [
- "clap",
- "ctrlc",
- "socket2",
  "windows-sys 0.52.0",
 ]
 

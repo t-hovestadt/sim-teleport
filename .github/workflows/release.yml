@@ -31,21 +31,21 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release | Out-Null
-          Copy-Item target/x86_64-pc-windows-msvc/release/sim-bridge.exe release/
+          Copy-Item target/x86_64-pc-windows-msvc/release/sim-teleport.exe release/
           Copy-Item start-source.bat release/
           Copy-Item start-target.bat release/
-          Copy-Item sim-bridge.lan.toml release/
-          Copy-Item sim-bridge.direct.toml release/
+          Copy-Item sim-teleport.lan.toml release/
+          Copy-Item sim-teleport.direct.toml release/
           Copy-Item README.md release/
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/sim-bridge.exe
+            release/sim-teleport.exe
             release/start-source.bat
             release/start-target.bat
-            release/sim-bridge.lan.toml
-            release/sim-bridge.direct.toml
+            release/sim-teleport.lan.toml
+            release/sim-teleport.direct.toml
             release/README.md
           generate_release_notes: true

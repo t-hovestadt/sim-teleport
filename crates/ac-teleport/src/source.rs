@@ -15,7 +15,7 @@ use crate::stats::Stats;
 const DETECT_INTERVAL: Duration = Duration::from_secs(2);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(30);
 // Standalone only: reconnect after this long with no packetId advance (stale-map detection).
-// Not used in managed mode — sim-bridge sends the shutdown signal when the game exits.
+// Not used in managed mode — sim-teleport sends the shutdown signal when the game exits.
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
 const STATIC_RESEND_INTERVAL: Duration = Duration::from_secs(10);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
@@ -251,7 +251,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
             // ── Reconnect / game-switch detection ─────────────────────────────────
             // Standalone only: if no packetId advance for RECONNECT_INTERVAL, the game
             // has likely closed (stale maps). Reconnect so we detect the next launch.
-            // Managed mode skips this — sim-bridge sends a shutdown signal on game exit,
+            // Managed mode skips this — sim-teleport sends a shutdown signal on game exit,
             // so packetId being 0 just means the game is on the menu, not that it's gone.
             if args.game.is_none() && last_nonzero_tick.elapsed() >= RECONNECT_INTERVAL {
                 // FanaLab workaround: zero shared memory on game exit so FanaLab
@@ -281,8 +281,8 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
             }
 
             // Managed-mode safety exit: if no session activity for 5 minutes,
-            // break and re-open maps. Primary exit is sim-bridge sending shutdown;
-            // this fires only if that signal is lost (e.g. sim-bridge crashed).
+            // break and re-open maps. Primary exit is sim-teleport sending shutdown;
+            // this fires only if that signal is lost (e.g. sim-teleport crashed).
             if args.game.is_some() && last_nonzero_tick.elapsed() >= Duration::from_secs(300) {
                 eprintln!(
                     "[{}] Safety timeout: no session for 5 min — reconnecting",

@@ -214,7 +214,7 @@ impl AppSlot {
                             target: cfg.network.target_ip.clone(),
                             games: Some(vec![id.to_string()]),
                             // force_bind bypasses sim-relay's internal process detection;
-                            // sim-bridge owns detection and manages the lifecycle.
+                            // sim-teleport owns detection and manages the lifecycle.
                             force_bind: true,
                             all: false,
                             local_forward: false,

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 const MAX_LOG_BYTES: u64 = 10 * 1024 * 1024;
-const LOG_FILENAME: &str = "sim-bridge.log";
+const LOG_FILENAME: &str = "sim-teleport.log";
 
 #[derive(Clone)]
 pub struct Logger {

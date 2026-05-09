@@ -286,7 +286,7 @@ fn setup_game_common_dir(game: &AcGame, common_dir: &Path) {
             for fname in &["SimHub.py", "simhub_shared_mem.py", "__init__.py"] {
                 let py = common_dir.join("apps/python/SimHub").join(fname);
                 if !py.exists() {
-                    std::fs::write(py, "# sim-bridge stub\r\n").ok();
+                    std::fs::write(py, "# sim-teleport stub\r\n").ok();
                 }
             }
         }
@@ -402,7 +402,7 @@ pub fn ensure_ac_appmanifests(
                     continue;
                 }
 
-                // Copy sim-bridge.exe as the named stub process so that when
+                // Copy sim-teleport.exe as the named stub process so that when
                 // StubManager spawns it, FindProcessPath resolves to this directory —
                 // the same path that the appmanifest points to.
                 if let Ok(src) = std::env::current_exe() {

@@ -1,12 +1,12 @@
-# sim-bridge — Direct Ethernet config (optional)
+# sim-teleport — Direct Ethernet config (optional)
 # Dedicated cable between gaming PC and SimHub PC, no router.
 #
 # This file is OPTIONAL. You can use CLI flags instead:
-#   Gaming PC bat:  sim-bridge.exe source --unicast --target 192.168.50.2 --bind 192.168.50.1
-#   SimHub PC bat:  sim-bridge.exe target --unicast --source 192.168.50.1 --high-priority --busy-wait
+#   Gaming PC bat:  sim-teleport.exe source --unicast --target 192.168.50.2 --bind 192.168.50.1
+#   SimHub PC bat:  sim-teleport.exe target --unicast --source 192.168.50.1 --high-priority --busy-wait
 #
-# If you prefer a config file, rename this to sim-bridge.toml, place it next
-# to sim-bridge.exe, and edit source_ip / target_ip to match your static IPs.
+# If you prefer a config file, rename this to sim-teleport.toml, place it next
+# to sim-teleport.exe, and edit source_ip / target_ip to match your static IPs.
 # CLI flags (in the bat file) override values set here.
 
 mode = "source"
