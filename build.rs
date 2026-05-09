@@ -1,15 +1,9 @@
 fn main() {
-    let deps = [
-        "deps/iracing-teleport/teleport/Cargo.toml",
-        "deps/ac-teleport/Cargo.toml",
-        "deps/sim-relay/Cargo.toml",
-    ];
-    for dep in deps {
-        if !std::path::Path::new(dep).exists() {
-            panic!(
-                "\n\nSubmodules not initialized.\nRun: git submodule update --init --recursive\n\n"
-            );
-        }
+    let iracing_toml = "deps/iracing-teleport/teleport/Cargo.toml";
+    if !std::path::Path::new(iracing_toml).exists() {
+        panic!(
+            "\n\nSubmodules not initialized.\nRun: git submodule update --init --recursive\n\n"
+        );
     }
 
     for (name, path) in [
@@ -17,8 +11,8 @@ fn main() {
             "IRACING_TELEPORT_VERSION",
             "deps/iracing-teleport/teleport/Cargo.toml",
         ),
-        ("AC_TELEPORT_VERSION", "deps/ac-teleport/Cargo.toml"),
-        ("SIM_RELAY_VERSION", "deps/sim-relay/Cargo.toml"),
+        ("AC_TELEPORT_VERSION", "crates/ac-teleport/Cargo.toml"),
+        ("SIM_RELAY_VERSION", "crates/sim-relay/Cargo.toml"),
     ] {
         let content = std::fs::read_to_string(path).unwrap_or_default();
         let version = content

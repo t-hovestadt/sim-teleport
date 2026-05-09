@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/ac-teleport", "crates/sim-relay"]
+resolver = "2"
+
 [package]
 name = "sim-bridge"
 version = "0.1.5"
@@ -10,8 +14,8 @@ path = "src/main.rs"
 
 [dependencies]
 teleport    = { path = "deps/iracing-teleport/teleport" }
-ac-teleport = { path = "deps/ac-teleport" }
-sim-relay   = { path = "deps/sim-relay" }
+ac-teleport = { path = "crates/ac-teleport" }
+sim-relay   = { path = "crates/sim-relay" }
 clap        = { version = "4", features = ["derive"] }
 ctrlc       = "3"
 toml        = "0.8"

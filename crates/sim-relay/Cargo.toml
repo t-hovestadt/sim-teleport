@@ -8,18 +8,6 @@ description = "Forward game telemetry UDP to a remote SimHub PC"
 name = "sim_relay"
 path = "src/lib.rs"
 
-[[bin]]
-name = "sim-relay"
-path = "src/main.rs"
-
-[[bin]]
-name = "source"
-path = "src/bin/source.rs"
-
-[[bin]]
-name = "target"
-path = "src/bin/target.rs"
-
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
@@ -32,10 +20,3 @@ windows-sys = { version = "0.52", features = [
     "Win32_System_Threading",
     "Win32_System_Diagnostics_ToolHelp",
 ] }
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = "symbols"
