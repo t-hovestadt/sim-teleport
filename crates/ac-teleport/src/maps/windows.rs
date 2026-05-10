@@ -187,21 +187,37 @@ impl WindowsSharedMap {
 /// zeroed data before we release them.
 pub fn zero_named_map(name: &str) {
     unsafe {
-        let h_map = OpenFileMappingW(FILE_MAP_WRITE, 0, wide(name).as_ptr());
-        if h_map == 0 || h_map == INVALID_HANDLE_VALUE {
-            return;
-        }
-        let view = MapViewOfFile(h_map, FILE_MAP_WRITE, 0, 0, 0);
-        if view.Value.is_null() {
+        'retry: for attempt in 1u8..=3 {
+            let h_map = OpenFileMappingW(FILE_MAP_WRITE, 0, wide(name).as_ptr());
+            if h_map == 0 || h_map == INVALID_HANDLE_VALUE {
+                println!(
+                    "[AC Teleport] zero_named_map({name}): could not open map for writing (attempt {attempt}/3)"
+                );
+                if attempt < 3 {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                }
+                continue 'retry;
+            }
+            let view = MapViewOfFile(h_map, FILE_MAP_WRITE, 0, 0, 0);
+            if view.Value.is_null() {
+                CloseHandle(h_map);
+                println!(
+                    "[AC Teleport] zero_named_map({name}): could not map view for writing (attempt {attempt}/3)"
+                );
+                if attempt < 3 {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                }
+                continue 'retry;
+            }
+            let size = query_region_size(view.Value as *const u8).unwrap_or(0);
+            if size > 0 {
+                std::ptr::write_bytes(view.Value as *mut u8, 0, size);
+            }
+            UnmapViewOfFile(view);
             CloseHandle(h_map);
+            println!("[AC Teleport] {name}: shared memory zeroed successfully");
             return;
         }
-        let size = query_region_size(view.Value as *const u8).unwrap_or(0);
-        if size > 0 {
-            std::ptr::write_bytes(view.Value as *mut u8, 0, size);
-        }
-        UnmapViewOfFile(view);
-        CloseHandle(h_map);
     }
 }
 

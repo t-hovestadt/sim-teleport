@@ -145,7 +145,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 zero_named_map(game.physics_map);
                 zero_named_map(game.graphics_map);
                 zero_named_map(game.static_map);
-                std::thread::sleep(std::time::Duration::from_millis(200));
+                std::thread::sleep(std::time::Duration::from_millis(500));
                 stats.print_summary();
                 return Ok(());
             }
@@ -263,7 +263,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 zero_named_map(game.physics_map);
                 zero_named_map(game.graphics_map);
                 zero_named_map(game.static_map);
-                std::thread::sleep(std::time::Duration::from_millis(200));
+                std::thread::sleep(std::time::Duration::from_millis(500));
                 drop(maps);
                 match try_open_maps(game) {
                     Ok(new_maps) => {
