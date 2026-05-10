@@ -1,5 +1,4 @@
 mod config;
-mod fanatec;
 mod install;
 mod logger;
 mod report;
@@ -80,12 +79,6 @@ enum Cmd {
         /// Port offset for Sim Relay forwarding (default 10000). Source sends to target:(game_port+offset).
         #[arg(long, value_name = "N")]
         port_offset: Option<u16>,
-        /// Do not automatically stop and restart Fanatec services around game launch.
-        /// By default, sim-teleport stops FanatecService before AC EVO launches (when
-        /// running as administrator) so EVO can create its shared memory maps without
-        /// "Access is denied" errors, then restarts the service after detection.
-        #[arg(long)]
-        no_fanatec_restart: bool,
     },
     /// SimHub PC — starts all three telemetry receivers simultaneously.
     Target {
@@ -189,7 +182,6 @@ fn main() {
                     drain: None,
                     verbose: false,
                     port_offset: None,
-                    no_fanatec_restart: false,
                 }
             }
         }
@@ -210,7 +202,6 @@ fn main() {
             drain,
             verbose,
             port_offset,
-            no_fanatec_restart,
         } => run_source(
             target,
             bind,
@@ -226,7 +217,6 @@ fn main() {
             drain,
             verbose,
             port_offset,
-            no_fanatec_restart,
         ),
         Cmd::Target {
             source,
@@ -281,7 +271,6 @@ fn run_source(
     drain: Option<u64>,
     verbose: bool,
     port_offset: Option<u16>,
-    no_fanatec_restart: bool,
 ) {
     let log = logger::Logger::open().unwrap_or_else(|e| {
         eprintln!("Warning: could not open log file: {e}");
@@ -335,9 +324,6 @@ fn run_source(
     }
     if let Some(o) = port_offset {
         cfg.apps.relay_port_offset = o;
-    }
-    if no_fanatec_restart {
-        cfg.no_fanatec_restart = true;
     }
 
     let version_string = format!(
