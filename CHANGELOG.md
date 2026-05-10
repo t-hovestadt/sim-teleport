@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.3
+
+### Changed
+
+- Reverted automatic Fanatec service restart — too invasive and unreliable in practice.
+- Removed `--no-fanatec-restart` flag (no longer needed).
+
+### Fixed
+
+- **Documentation**: simplified FanaLab + AC EVO troubleshooting to a manual workaround:
+  close FanaLab before launching AC EVO, reopen after EVO is running.
+
+---
+
 ## v0.2.2
 
 ### Fixed
