@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.2.2
+
+### Fixed
+
+- **AC EVO: FanatecService shared memory conflict** — `sim-teleport source` now stops and
+  restarts Fanatec Windows services when running as administrator, allowing AC EVO to create
+  its shared memory maps without "Access is denied" errors. When not elevated, a warning is
+  logged with manual steps instead.
+
+- **AC EVO: target opens maps held by other processes** — target now calls `OpenFileMappingW`
+  before `CreateFileMappingW`, so if FanaLab already holds a map open (write-accessible),
+  sim-teleport writes into it rather than failing.
+
+- **AC EVO: target creates maps at game-native sizes** — EVO maps are now created at
+  4096 / 8192 / 4096 bytes (matching what AC EVO writes) instead of the AC1 uniform 64KB
+  size. Eliminates oversized allocations and potential page-boundary issues.
+
+- **Detection: no false AC1 trigger from SimHub-created maps** — when AC EVO shared memory
+  maps exist on the source PC (created by SimHub or FanaLab) but the game process is not
+  confirmed, the detector now suppresses the AC1/ACC check, preventing a false positive.
+
+- **Troubleshooting: CarNames.csv missing key documented** — added entry explaining that
+  the `Missing key 0 in LookupTables\AssettoCorsaEVO.CarNames.csv` SimHub log message is
+  cosmetic and does not affect telemetry data.
+
+### Added
+
+- **`--no-fanatec-restart` flag** — source mode: disables automatic Fanatec service
+  stop/start around game launch for users who prefer to manage FanaLab themselves.
+
+- **Diagnostic hex dump for AC EVO maps** — source and target log the first 32 bytes of
+  `acevo_pmf_physics` every 5 seconds while the game is active, to assist with shared
+  memory debugging (temporary, will be removed after testing).
+
+---
+
 ## v0.2.1
 
 ### Fixed
