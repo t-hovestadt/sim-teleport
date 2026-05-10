@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6
+
+### Fixed
+
+- iRacing process-gone threshold increased from 9 seconds to 30 seconds — session transitions (practice → qualify → race) no longer trigger premature shutdown and restart loops
+
+---
+
 ## v0.2.5
 
 ### Fixed
