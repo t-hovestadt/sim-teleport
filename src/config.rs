@@ -19,6 +19,9 @@ pub struct Config {
     /// CLI-only flag — never written to or read from toml.
     #[serde(skip)]
     pub verbose: bool,
+    /// CLI-only flag — skip automatic Fanatec service restart around game launch.
+    #[serde(skip)]
+    pub no_fanatec_restart: bool,
 }
 
 fn default_mode() -> String {
@@ -147,6 +150,7 @@ impl Default for Config {
         Self {
             mode: "source".to_string(),
             verbose: false,
+            no_fanatec_restart: false,
             network: NetworkConfig {
                 source_ip: "192.168.50.1".to_string(),
                 target_ip: "192.168.50.2".to_string(),

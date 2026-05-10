@@ -773,6 +773,7 @@ before pushing any Windows-specific code.
 | SimHub logs `Missing key 0 in LookupTables\AssettoCorsaEVO.CarNames.csv` | Cosmetic only — SimHub's car-name lookup table doesn't have entries for all AC EVO car IDs yet. Telemetry data (RPM, speed, gear, lap times) works regardless. Check for a newer SimHub version; these CSV files are updated periodically. |
 | 0 msg/s on target | Data not reaching target — check source log, firewall, and network path. |
 | FanaLab LEDs stuck after game exits | Stale RPM data. Ensure `stale_timeout_secs` fires and zeroing runs. A 10-second delay is normal. |
+| AC EVO fails with "Access is denied" in source log | FanaLab holds the shared memory map before the game creates it. Fix: (1) run `sim-teleport source` as administrator — it stops and restarts FanaLab services automatically; (2) close FanaLab before launching AC EVO, reopen after; (3) use `--no-fanatec-restart` to opt out of automatic handling. |
 | Wreckfest 2 not detected | `config.json` missing or game not restarted after creation. Check source log for `Created telemetry config`. |
 | `[Wreckfest 2] Created telemetry config` | Restart Wreckfest 2 to activate telemetry — it only reads config on launch. |
 | BeamNG OutGauge (port 63392) not working | Port overflows at `relay_port_offset = 10000`. Set `apps.relay_port_offset` to ≤ 2143. |

@@ -2,6 +2,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
+use crate::fanatec;
 use crate::logger::Logger;
 use crate::report::SessionReport;
 use crate::scanner::ProcessScanner;
@@ -108,6 +109,43 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
         config.detection.scan_interval
     ));
 
+    // If Fanatec software is running and we have admin rights, stop its services
+    // before the game launches.  FanatecService creates acevo_pmf_* maps on
+    // startup, which prevents AC EVO from creating its own maps ("Access is
+    // denied").  We restart the service once detection confirms the game is up
+    // and its maps are already in place.
+    //
+    // Skipped when:  --no-fanatec-restart is set, AC Teleport is disabled,
+    //                no Fanatec software is running, or we are not elevated.
+    let mut fanatec_was_stopped = false;
+    if config.apps.ac_teleport_enabled
+        && !config.no_fanatec_restart
+        && fanatec::is_fanatec_running()
+    {
+        if fanatec::is_elevated() {
+            log.log(
+                "[fanatec] Stopping Fanatec services — will restart once the game is detected.",
+            );
+            match fanatec::stop_fanatec() {
+                Ok(()) => {
+                    fanatec_was_stopped = true;
+                }
+                Err(e) => {
+                    log.log(&format!(
+                        "[fanatec] Could not stop services: {e}. \
+                         AC EVO may show 'Access is denied' — close FanaLab manually."
+                    ));
+                }
+            }
+        } else {
+            log.log(
+                "[fanatec] Fanatec software detected. If AC EVO shows 'Access is denied', \
+                 run sim-teleport as administrator (automatic fix) or close FanaLab before \
+                 launching EVO.",
+            );
+        }
+    }
+
     loop {
         if shutdown.try_recv().is_ok() {
             break;
@@ -172,6 +210,18 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                     };
                     if shmem.start_shmem(d, &config, log) {
                         report.start_session(app, d.label, d.how);
+                    }
+                    if fanatec_was_stopped {
+                        log.log("[fanatec] Game detected — restarting Fanatec services...");
+                        match fanatec::start_fanatec() {
+                            Ok(()) => log.log(
+                                "[fanatec] Fanatec services restarted — LED control restored.",
+                            ),
+                            Err(e) => log.log(&format!(
+                                "[fanatec] Could not restart: {e}. Restart FanaLab manually."
+                            )),
+                        }
+                        fanatec_was_stopped = false;
                     }
                 }
 
@@ -240,6 +290,11 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
     }
 
     log.log("Shutting down...");
+    if fanatec_was_stopped {
+        log.log("[fanatec] Restarting Fanatec services on shutdown...");
+        let _ = fanatec::start_fanatec();
+        log.log("[fanatec] Done.");
+    }
     shmem.stop(log);
     report.end_session("Ctrl-C shutdown");
     report.write();
