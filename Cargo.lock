@@ -493,7 +493,7 @@ dependencies = [
 
 [[package]]
 name = "sim-teleport"
-version = "0.2.2"
+version = "0.2.4"
 dependencies = [
  "ac-teleport",
  "anyhow",

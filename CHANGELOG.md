@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.5
+
+### Fixed
+
+- iRacing session transitions no longer trigger the failure tracker — process flicker during loading screens (practice → qualify → race) was incorrectly counted as crashes, disabling iRacing forwarding for 5 minutes
+
+---
+
 ## v0.2.4
 
 ### Fixed
