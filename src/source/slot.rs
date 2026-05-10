@@ -88,6 +88,11 @@ pub(super) struct AppSlot {
     /// Drain only begins after 3 consecutive misses to absorb brief process-list blips
     /// during AC session transitions / loading screens.
     pub(super) consecutive_gone: u32,
+    /// Set by cancel_drain() — the thread will exit soon because its shutdown signal was
+    /// already sent during the preceding process-gone stop. The next is_running_finished()
+    /// event is an expected clean exit from a session transition, not a crash; skip
+    /// failures.record() for it.
+    pub(super) expect_thread_exit: bool,
 }
 
 impl AppSlot {
@@ -100,6 +105,7 @@ impl AppSlot {
             detached: None,
             consecutive_redetections: 0,
             consecutive_gone: 0,
+            expect_thread_exit: false,
         }
     }
 
@@ -247,6 +253,7 @@ impl AppSlot {
         ));
         self.state = SlotState::Running { handle, game };
         self.consecutive_gone = 0;
+        self.expect_thread_exit = false;
         true
     }
 
@@ -265,6 +272,10 @@ impl AppSlot {
         let state = std::mem::replace(&mut self.state, SlotState::Idle);
         if let SlotState::Draining { handle, game, .. } = state {
             self.state = SlotState::Running { handle, game };
+            // The thread already received its shutdown signal during the process-gone
+            // stop that triggered this drain. When it exits, that's an expected clean
+            // transition — not a crash.
+            self.expect_thread_exit = true;
         }
     }
 

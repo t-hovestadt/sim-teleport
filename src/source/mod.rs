@@ -121,7 +121,15 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                     "[{name}] Game closed — draining {}s",
                     config.detection.drain_seconds
                 ));
-                shmem.failures.record(log, name);
+                // Only record a failure for unexpected thread exits. When
+                // expect_thread_exit is set the thread was shut down explicitly
+                // during an iRacing session-transition (process-gone → drain →
+                // cancel_drain). That's a clean cycle, not a crash.
+                if shmem.expect_thread_exit {
+                    shmem.expect_thread_exit = false;
+                } else {
+                    shmem.failures.record(log, name);
+                }
                 shmem.begin_drain();
             } else if let Some(game) = shmem.current_game() {
                 if !is_game_still_running(game, &mut scanner, log) {
