@@ -134,7 +134,11 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
             } else if let Some(game) = shmem.current_game() {
                 if !is_game_still_running(game, &mut scanner, log) {
                     shmem.consecutive_gone += 1;
-                    if shmem.consecutive_gone >= 3 {
+                    let gone_threshold = match game {
+                        ShmemGame::Iracing => 10, // 30s at 3s scan interval for session transitions
+                        _ => 3,
+                    };
+                    if shmem.consecutive_gone >= gone_threshold {
                         let name = game_label(Some(game));
                         log.log(&format!(
                             "[{name}] Game process gone ({} consecutive scans) — stopping",
