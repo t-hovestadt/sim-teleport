@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.2.4
+
+### Fixed
+
+- **FanaLab LED cleanup**: `zero_on_exit` and `zero_named_map` now retry up to 3 times
+  with 5-second delays when the game's shared memory map can't be opened for writing.
+- **FanaLab LED cleanup**: post-zero sleep increased from 200ms to 500ms to give FanaLab
+  more time to read the zeroed RPM value before map handles are released.
+- **FanaLab LED cleanup**: both functions now log success or failure with specific error
+  details instead of failing silently after the caller already printed "Zeroing shared
+  memory".
+- **Reverted automatic Fanatec service restart** — too invasive and unreliable.
+- **Detection**: SimHub on source PC no longer causes false AC1 detection when AC EVO
+  maps exist but the game process is not confirmed.
+
+### Changed
+
+- Removed `--no-fanatec-restart` flag (no longer needed after revert above).
+
+---
+
 ## v0.2.3
 
 ### Changed
