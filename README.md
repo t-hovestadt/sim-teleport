@@ -265,15 +265,47 @@ ACC both use `Local\acpmf_physics`. EVO is probed first. If EVO is live,
 AC1/ACC are skipped. If `Local\acpmf_physics` is live, the tiebreaker
 checks for `acc.exe` vs `acs.exe` to distinguish ACC from AC1.
 
-### 3-scan liveness rule
+**EVO map opening — FanaLab fallback**: when opening EVO maps the source
+tries `CreateFileMappingW` first (create or open). If that returns `Access
+is denied` (FanaLab holds the map), it falls back to `OpenFileMappingW`
+with `FILE_MAP_WRITE` access, writing into the existing map that FanaLab
+already has open. This eliminates the need to stop FanaLab before launching
+AC EVO for telemetry forwarding to work.
 
-A game must be missing from detection for **3 consecutive scan cycles**
-(default: 9 seconds) before sim-teleport sends a shutdown signal to the
-telemetry thread. This prevents rapid start/stop loops from process
-flickering during AC session transitions (the AC launcher spawns and kills
-several child processes when loading a session — transient absences of
-`acs.exe` during this window would otherwise cause premature shutdown and
-reconnect churn).
+**EVO map sizes**: EVO maps are created at game-native sizes
+(4096 / 8192 / 4096 bytes for physics / graphics / static) rather than
+the AC1 uniform 64 KB size. This matches what AC EVO itself writes and
+avoids oversized allocations.
+
+**SimHub source-side ghost maps**: if SimHub is running on the source PC,
+it creates `acpmf_*` maps that can have an advancing `packetId` even when
+no AC game is running. When EVO maps are present (Live or Stale), the
+AC1/ACC check is suppressed entirely — only after EVO maps are absent does
+AC1/ACC probing proceed. This prevents false AC1 detection when only
+SimHub's ghost maps exist.
+
+**Diagnostic hex dump**: the source currently logs the first 32 bytes of
+`acevo_pmf_physics` every 5 seconds while AC EVO is active. This is
+temporary and will be removed in the next release.
+
+### Process-gone threshold
+
+A game must be missing from detection for a number of **consecutive scan
+cycles** before sim-teleport sends a shutdown signal to the telemetry
+thread. This prevents rapid start/stop loops from process flickering:
+
+| Game | Threshold | Time at 3 s interval | Reason |
+|------|-----------|----------------------|--------|
+| iRacing | 10 scans | **30 seconds** | iRacing's process disappears for up to ~20 s during session transitions (practice → qualify → race). The longer window prevents premature shutdown and restart loops. |
+| All other games | 3 scans | 9 seconds | AC session transitions are brief; 3 scans is sufficient. |
+
+**iRacing session transitions and the failure tracker**: when iRacing's
+process briefly disappears during a session transition, the telemetry
+thread receives a shutdown signal and exits. This is an expected clean
+exit — not a crash. The failure tracker (`FailureTracker`) skips
+recording it, so the 3-failures-in-60s backoff is not triggered by
+normal session cycling. The `expect_thread_exit` flag in `AppSlot`
+distinguishes these clean exits from actual crashes.
 
 ### Why iRacing uses process detection instead of shared memory
 
@@ -286,7 +318,8 @@ to this — when iRacing exits the process disappears.
 ### Detection state machine
 
 ```
-    Idle ──(detected)──► Running ──(not detected × 3)──► Draining ──(20s)──► Idle
+    Idle ──(detected)──► Running ──(not detected × 3*)──► Draining ──(20s)──► Idle
+                                                         * × 10 for iRacing
                                        │                       │
                                   (still detected)        (detected again)
                                        │                       │
@@ -493,6 +526,12 @@ zeroes its shared memory region before closing:
   `WriteProcessMemory` + `VirtualQuery`.
 - AC Teleport: zeroes all three page maps (physics, graphics, static).
 - Target side: both receivers zero their maps on stale timeout.
+
+The zeroing functions retry up to **3 times** with **5-second delays** if
+the shared memory map cannot be opened for writing (e.g., the map handle
+is briefly contested). After a successful zero, a 500 ms sleep gives
+FanaLab time to read the zeroed RPM value before map handles are released.
+Success or failure is logged explicitly — the operation is never silent.
 
 FanaLab reads RPM=0 on the next poll and sends the LED-off command to the
 firmware.
@@ -774,6 +813,7 @@ before pushing any Windows-specific code.
 | 0 msg/s on target | Data not reaching target — check source log, firewall, and network path. |
 | FanaLab LEDs stuck after game exits | Stale RPM data. Ensure `stale_timeout_secs` fires and zeroing runs. A 10-second delay is normal. |
 | `MapViewOfFile failed: acevo_pmf_graphics -> Access is denied` in source log | FanaLab holds the shared memory map before AC EVO creates it. Close FanaLab before launching AC EVO. Reopen FanaLab after EVO is running. |
+| Log shows rapid `[iRacing Teleport] Game process gone` → `Game confirmed back` → `Game closed` cycle during session transitions | iRacing's process briefly disappears during session transitions. Fixed in v0.2.6 — the process-gone threshold for iRacing is 30 seconds (10 scans). Upgrade if you see this pattern. |
 | Wreckfest 2 not detected | `config.json` missing or game not restarted after creation. Check source log for `Created telemetry config`. |
 | `[Wreckfest 2] Created telemetry config` | Restart Wreckfest 2 to activate telemetry — it only reads config on launch. |
 | BeamNG OutGauge (port 63392) not working | Port overflows at `relay_port_offset = 10000`. Set `apps.relay_port_offset` to ≤ 2143. |
@@ -785,7 +825,7 @@ before pushing any Windows-specific code.
 
 | Repo | Tag | Notes |
 |------|-----|-------|
-| sim-teleport | `v0.2.0` | Stays at HEAD; moved on each release |
+| sim-teleport | `v0.2.6` | Stays at HEAD; moved on each release |
 | iracing-teleport | `v1.0` | Moves to HEAD on every update; never create `v1.0.x` tags |
 
 Release workflow triggers on `push: tags: v*`. CI runs on `windows-latest`.
