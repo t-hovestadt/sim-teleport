@@ -1,4 +1,5 @@
 mod config;
+mod cpu;
 mod install;
 mod logger;
 mod report;
@@ -79,6 +80,9 @@ enum Cmd {
         /// Port offset for Sim Relay forwarding (default 10000). Source sends to target:(game_port+offset).
         #[arg(long, value_name = "N")]
         port_offset: Option<u16>,
+        /// Skip CPU 0 exclusion (for non-iRacing sims or when using Process Lasso).
+        #[arg(long)]
+        no_cpu_exclude: bool,
     },
     /// SimHub PC — starts all three telemetry receivers simultaneously.
     Target {
@@ -182,6 +186,7 @@ fn main() {
                     drain: None,
                     verbose: false,
                     port_offset: None,
+                    no_cpu_exclude: false,
                 }
             }
         }
@@ -202,6 +207,7 @@ fn main() {
             drain,
             verbose,
             port_offset,
+            no_cpu_exclude,
         } => run_source(
             target,
             bind,
@@ -217,6 +223,7 @@ fn main() {
             drain,
             verbose,
             port_offset,
+            no_cpu_exclude,
         ),
         Cmd::Target {
             source,
@@ -271,7 +278,13 @@ fn run_source(
     drain: Option<u64>,
     verbose: bool,
     port_offset: Option<u16>,
+    no_cpu_exclude: bool,
 ) {
+    if no_cpu_exclude {
+        eprintln!("[cpu] CPU 0 exclusion disabled by --no-cpu-exclude flag");
+    } else {
+        cpu::avoid_cpu0();
+    }
     let log = logger::Logger::open().unwrap_or_else(|e| {
         eprintln!("Warning: could not open log file: {e}");
         logger::Logger::stderr()
