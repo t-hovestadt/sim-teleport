@@ -839,6 +839,7 @@ The release artifact (`sim-teleport.exe`) is built with
 
 | Repo | Purpose |
 |------|---------|
-| [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) | iRacing shared-memory streaming (standalone) |
+| [fanatec-tuner](https://github.com/t-hovestadt/fanatec-tuner) | Fanatec wheel tuning, LED control, and real-time shift lights for iRacing |
+| [iracing-teleport](https://github.com/t-hovestadt/iracing-teleport) | iRacing shared-memory streaming library (used as submodule) |
 | [ac-teleport](https://github.com/t-hovestadt/ac-teleport) | Assetto Corsa shared-memory streaming — archived; absorbed into sim-teleport as `crates/ac-teleport` |
 | [sim-relay](https://github.com/t-hovestadt/sim-relay) | UDP relay for 35+ games — archived; absorbed into sim-teleport as `crates/sim-relay` |
