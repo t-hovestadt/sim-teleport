@@ -648,6 +648,7 @@ Both files are plain text, readable in any editor.
 | `--drain <SECS>` | `20` | Grace period after game closes before stopping telemetry. |
 | `--verbose` | off | Print detailed detection results each cycle. |
 | `--port-offset <N>` | `10000` | Port offset for sim-relay (target listens on `game_port + N`). |
+| `--no-cpu-exclude` | off | Skip CPU 0 exclusion (for non-iRacing setups or when using Process Lasso for manual affinity management). |
 
 ### `sim-teleport target [OPTIONS]`
 
@@ -825,7 +826,7 @@ before pushing any Windows-specific code.
 
 | Repo | Tag | Notes |
 |------|-----|-------|
-| sim-teleport | `v0.2.6` | Stays at HEAD; moved on each release |
+| sim-teleport | `v0.3.1` | Stays at HEAD; moved on each release |
 | iracing-teleport | `v1.0` | Moves to HEAD on every update; never create `v1.0.x` tags |
 
 Release workflow triggers on `push: tags: v*`. CI runs on `windows-latest`.
