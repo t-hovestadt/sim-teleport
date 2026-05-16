@@ -1,4 +1,5 @@
 use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -93,6 +94,10 @@ pub(super) struct AppSlot {
     /// event is an expected clean exit from a session transition, not a crash; skip
     /// failures.record() for it.
     pub(super) expect_thread_exit: bool,
+    /// Cumulative transfer stats written by the on_stats callback from iracing-teleport.
+    /// `(total_messages, total_bytes, avg_latency_us)` — zeroed at each `start_shmem()`.
+    /// Non-iRacing sessions never write to this; it stays at `(0, 0, 0)`.
+    pub(super) session_stats: Arc<Mutex<(u64, u64, u64)>>,
 }
 
 impl AppSlot {
@@ -106,6 +111,7 @@ impl AppSlot {
             consecutive_redetections: 0,
             consecutive_gone: 0,
             expect_thread_exit: false,
+            session_stats: Arc::new(Mutex::new((0, 0, 0))),
         }
     }
 
@@ -138,6 +144,11 @@ impl AppSlot {
         let name = self.name;
         let verbose = config.verbose;
 
+        // Reset stats for the new session. Non-iRacing branches never write to
+        // session_stats, so they will always show (0, 0, 0) → no stats line in report.
+        *self.session_stats.lock().unwrap() = (0, 0, 0);
+        let session_stats_arc = Arc::clone(&self.session_stats);
+
         let handle = std::thread::Builder::new()
             .name(name.to_string())
             .spawn(move || match game {
@@ -167,6 +178,11 @@ impl AppSlot {
                             unicast: cfg.network.unicast,
                             high_priority: cfg.apps.high_priority,
                             busy_wait: cfg.apps.busy_wait,
+                            on_stats: Some(Arc::new(move |msgs, bytes, avg_lat| {
+                                if let Ok(mut s) = session_stats_arc.lock() {
+                                    *s = (msgs, bytes, avg_lat);
+                                }
+                            })),
                             ..teleport::SourceConfig::default()
                         },
                         rx,

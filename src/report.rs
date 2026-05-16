@@ -13,6 +13,9 @@ pub struct GameSession {
     pub started: DateTime<Local>,
     pub stopped: Option<DateTime<Local>>,
     pub stop_reason: &'static str,
+    pub total_messages: u64,
+    pub total_bytes: u64,
+    pub avg_latency_us: u64,
 }
 
 pub struct SessionReport {
@@ -84,7 +87,20 @@ impl SessionReport {
             started: Local::now(),
             stopped: None,
             stop_reason: "",
+            total_messages: 0,
+            total_bytes: 0,
+            avg_latency_us: 0,
         });
+    }
+
+    /// Update the most recent session's transfer stats.
+    /// Call just before `end_session()` to record how much data was transferred.
+    pub fn update_session_stats(&mut self, messages: u64, bytes: u64, avg_latency_us: u64) {
+        if let Some(s) = self.sessions.last_mut() {
+            s.total_messages = messages;
+            s.total_bytes = bytes;
+            s.avg_latency_us = avg_latency_us;
+        }
     }
 
     pub fn end_session(&mut self, reason: &'static str) {
@@ -227,6 +243,12 @@ fn write_to(f: &mut impl Write, r: &SessionReport) -> std::io::Result<()> {
             writeln!(f, "    Stopped: still running")?;
         }
         writeln!(f, "    Duration: {duration}")?;
+        if s.total_messages > 0 {
+            writeln!(f, "    Messages: {}", s.total_messages)?;
+            let mb = s.total_bytes as f64 / 1_000_000.0;
+            writeln!(f, "    Data: {mb:.1} MB")?;
+            writeln!(f, "    Avg latency: {} µs", s.avg_latency_us)?;
+        }
     }
     writeln!(f)?;
 

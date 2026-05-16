@@ -207,6 +207,10 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                     shmem.consecutive_gone = 0;
                     let old_name = game_label(shmem.current_game());
                     log.log(&format!("[{old_name}] Stopping (switching to {})", d.label));
+                    {
+                        let (msgs, bytes, lat) = *shmem.session_stats.lock().unwrap();
+                        report.update_session_stats(msgs, bytes, lat);
+                    }
                     shmem.stop(log);
                     report.end_session("switched to new game");
                     shmem.failures.reset();
@@ -225,6 +229,10 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
                     shmem.consecutive_gone = 0;
                     let name = game_label(shmem.current_game());
                     log.log(&format!("[{name}] Stopped"));
+                    {
+                        let (msgs, bytes, lat) = *shmem.session_stats.lock().unwrap();
+                        report.update_session_stats(msgs, bytes, lat);
+                    }
                     shmem.stop(log);
                     report.end_session("drain expired");
                     shmem.failures.reset();
@@ -252,6 +260,10 @@ pub fn run(config: Config, log: &Logger, shutdown: Receiver<()>, version_string:
     }
 
     log.log("Shutting down...");
+    {
+        let (msgs, bytes, lat) = *shmem.session_stats.lock().unwrap();
+        report.update_session_stats(msgs, bytes, lat);
+    }
     shmem.stop(log);
     report.end_session("Ctrl-C shutdown");
     report.write();
