@@ -167,8 +167,6 @@ impl AppSlot {
                             unicast: cfg.network.unicast,
                             high_priority: cfg.apps.high_priority,
                             busy_wait: cfg.apps.busy_wait,
-                            reconnect_timeout_secs: cfg.advanced.reconnect_timeout_secs,
-                            datagram_size: cfg.advanced.datagram_size,
                             ..teleport::SourceConfig::default()
                         },
                         rx,

@@ -220,7 +220,6 @@ fn spawn_teleport_target(
                     fanalab: config.apps.fanalab,
                     high_priority: config.apps.high_priority,
                     busy_wait: config.apps.busy_wait,
-                    stale_timeout_secs: config.advanced.stale_timeout_secs,
                     on_first_data,
                     on_stale,
                     ..teleport::TargetConfig::default()
