@@ -51,9 +51,9 @@ pub const EVO: GameConfig = GameConfig {
     physics_map: "Local\\acevo_pmf_physics",
     graphics_map: "Local\\acevo_pmf_graphics",
     static_map: "Local\\acevo_pmf_static",
-    max_physics_size: 4096,
-    max_graphics_size: 16384,
-    max_static_size: 4096,
+    max_physics_size: 65536,
+    max_graphics_size: 65536,
+    max_static_size: 65536,
 };
 
 /// Detection priority: EVO first (newer game), then AC1.

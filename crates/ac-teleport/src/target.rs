@@ -67,18 +67,6 @@ impl GameMapSet {
         }
     }
 
-    /// Create maps using the per-page sizes documented in `GameConfig`.
-    /// Matches what the real game creates so SimHub doesn't see an oversized region.
-    fn create_game_sized(game: &GameConfig) -> Self {
-        Self {
-            maps: [
-                try_create_map(game.physics_map, game.max_physics_size),
-                try_create_map(game.graphics_map, game.max_graphics_size),
-                try_create_map(game.static_map, game.max_static_size),
-            ],
-        }
-    }
-
     fn write_page(&mut self, page_idx: usize, data: &[u8]) {
         if let Some(Some(map)) = self.maps.get_mut(page_idx) {
             let copy_len = data.len().min(map.size());
@@ -102,42 +90,63 @@ impl GameMapSet {
     }
 }
 
+/// Which AC variant was last announced via PAGE_GAME_ANNOUNCE.
+#[derive(Clone, Copy, PartialEq)]
+enum ActiveGame {
+    Evo,
+    Ac1,
+}
+
 /// Either one game's maps (lazy, dropped on stale) or both games' maps (eager, zeroed on stale).
 enum MapMode {
     /// Single-game: maps created lazily on first data arrival; dropped on stale timeout.
     Single(GameMapSet),
     /// Dual-game: maps for both EVO and AC1 created at startup; status zeroed on stale.
-    Dual { evo: GameMapSet, ac1: GameMapSet },
+    /// `active` tracks which game's maps should receive writes, set by PAGE_GAME_ANNOUNCE.
+    /// Until a game is announced, writes go to both maps to avoid missing the first frame.
+    Dual {
+        evo: GameMapSet,
+        ac1: GameMapSet,
+        active: Option<ActiveGame>,
+    },
 }
 
 impl MapMode {
     fn write_page(&mut self, page_idx: usize, data: &[u8]) {
         match self {
             Self::Single(set) => set.write_page(page_idx, data),
-            Self::Dual { evo, ac1 } => {
-                evo.write_page(page_idx, data);
-                ac1.write_page(page_idx, data);
-            }
+            Self::Dual { evo, ac1, active } => match active {
+                Some(ActiveGame::Evo) => evo.write_page(page_idx, data),
+                Some(ActiveGame::Ac1) => ac1.write_page(page_idx, data),
+                // No game announced yet — write to both so the first frames are not lost.
+                None => {
+                    evo.write_page(page_idx, data);
+                    ac1.write_page(page_idx, data);
+                }
+            },
         }
     }
 
     fn zero_all_pages(&mut self) {
         match self {
             Self::Single(set) => set.zero_all(),
-            Self::Dual { evo, ac1 } => {
-                evo.zero_all();
-                ac1.zero_all();
-            }
+            Self::Dual { evo, ac1, active } => match active {
+                Some(ActiveGame::Evo) => evo.zero_all(),
+                Some(ActiveGame::Ac1) => ac1.zero_all(),
+                None => {
+                    evo.zero_all();
+                    ac1.zero_all();
+                }
+            },
         }
     }
 
     fn page_size(&self, page_idx: usize) -> usize {
         match self {
             Self::Single(set) => set.page_size(page_idx),
-            Self::Dual { evo, ac1 } => {
-                // Return the larger of the two so neither game's data is truncated at
-                // the write_len call site.  Each GameMapSet::write_page clips to its
-                // own map size independently, so the smaller EVO maps never overflow.
+            Self::Dual { evo, ac1, .. } => {
+                // Both sets use DUAL_MAP_SIZE, so either value is the same.
+                // Return max anyway for forward compatibility.
                 evo.page_size(page_idx).max(ac1.page_size(page_idx))
             }
         }
@@ -198,32 +207,34 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
 
     // In dual mode, create all six maps eagerly so SimHub can connect before data arrives.
     // In single-game mode, create lazily on first data arrival (existing behavior).
-    let mut maps: Option<MapMode> =
-        if args.game.is_none() {
-            let evo = GameMapSet::create_game_sized(&game::EVO);
-            let ac1 = GameMapSet::create(&game::AC1, DUAL_MAP_SIZE);
-            println!(
-                "Created shared memory maps for {} and {}",
-                game::EVO.name,
-                game::AC1.name
-            );
-            println!(
-                "  {} ({} bytes), {} ({} bytes), {} ({} bytes)",
-                game::EVO.physics_map,
-                game::EVO.max_physics_size,
-                game::EVO.graphics_map,
-                game::EVO.max_graphics_size,
-                game::EVO.static_map,
-                game::EVO.max_static_size,
-            );
-            println!(
-            "  {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes)",
-            game::AC1.physics_map, game::AC1.graphics_map, game::AC1.static_map
+    let mut maps: Option<MapMode> = if args.game.is_none() {
+        let evo = GameMapSet::create(&game::EVO, DUAL_MAP_SIZE);
+        let ac1 = GameMapSet::create(&game::AC1, DUAL_MAP_SIZE);
+        println!(
+            "Created shared memory maps for {} and {}",
+            game::EVO.name,
+            game::AC1.name
         );
-            Some(MapMode::Dual { evo, ac1 })
-        } else {
-            None
-        };
+        println!(
+            "  {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes)",
+            game::EVO.physics_map,
+            game::EVO.graphics_map,
+            game::EVO.static_map,
+        );
+        println!(
+            "  {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes), {} ({DUAL_MAP_SIZE} bytes)",
+            game::AC1.physics_map,
+            game::AC1.graphics_map,
+            game::AC1.static_map,
+        );
+        Some(MapMode::Dual {
+            evo,
+            ac1,
+            active: None,
+        })
+    } else {
+        None
+    };
 
     println!("Listening on {}", args.bind);
 
@@ -274,6 +285,20 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                             println!("[DIAG] PAGE_GAME_ANNOUNCE: game_id={game_id}"); // DIAGNOSTIC
                             if let Some(cb) = &args.on_game_announce {
                                 cb(game_id);
+                            }
+                            // Gate dual-mode writes to the announced game's maps only.
+                            if let Some(MapMode::Dual { active, .. }) = maps.as_mut() {
+                                *active = match game_id {
+                                    1 => Some(ActiveGame::Ac1),
+                                    2 => Some(ActiveGame::Evo),
+                                    _ => None,
+                                };
+                                let name = match active {
+                                    Some(ActiveGame::Evo) => game::EVO.name,
+                                    Some(ActiveGame::Ac1) => game::AC1.name,
+                                    None => "unknown",
+                                };
+                                println!("[AC Teleport] Active game: {name} (game_id={game_id})");
                             }
                         }
                     }
