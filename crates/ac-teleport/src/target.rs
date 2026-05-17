@@ -10,7 +10,8 @@ use crate::platform::{
     boost_thread_priority, pin_thread_to_core, set_high_priority, HighResTimer, MmcssGuard,
 };
 use crate::protocol::{
-    Receiver as ProtoReceiver, MAX_DATAGRAM_SIZE, PAGE_GAME_ANNOUNCE, PAGE_HEARTBEAT,
+    Receiver as ProtoReceiver, GAME_ID_AC1, GAME_ID_ACC, GAME_ID_EVO, MAX_DATAGRAM_SIZE,
+    PAGE_GAME_ANNOUNCE, PAGE_HEARTBEAT,
 };
 use crate::stats::Stats;
 
@@ -289,8 +290,8 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                             // Gate dual-mode writes to the announced game's maps only.
                             if let Some(MapMode::Dual { active, .. }) = maps.as_mut() {
                                 *active = match game_id {
-                                    1 => Some(ActiveGame::Ac1),
-                                    2 => Some(ActiveGame::Evo),
+                                    GAME_ID_AC1 | GAME_ID_ACC => Some(ActiveGame::Ac1),
+                                    GAME_ID_EVO => Some(ActiveGame::Evo),
                                     _ => None,
                                 };
                                 let name = match active {
