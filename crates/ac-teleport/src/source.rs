@@ -13,7 +13,6 @@ use crate::protocol::{
 use crate::stats::Stats;
 
 const DETECT_INTERVAL: Duration = Duration::from_secs(2);
-const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(30);
 // Standalone only: reconnect after this long with no packetId advance (stale-map detection).
 // Not used in managed mode — sim-teleport sends the shutdown signal when the game exits.
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
@@ -114,11 +113,13 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
         let mut sender = Sender::new();
         let mut stats = Stats::new("source");
 
-        // Announce game variant immediately so the target spawns the correct stub.
+        // Announce game variant before any data so the target routes to the correct maps.
+        // The 50 ms pause gives the announce time to arrive and be processed before the
+        // first physics/graphics frame, preventing a "default AC1" misroute on the target.
         if game_id != u8::MAX {
             let _ = sender.send_game_announce(game_id, |d| send_datagram!(d));
+            std::thread::sleep(Duration::from_millis(50));
         }
-        let mut announce_timer = Instant::now();
 
         let mut last_physics_id: i32 = 0;
         let mut last_graphics_id: i32 = 0;
@@ -240,12 +241,6 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 let source_us = tick_start.elapsed().as_micros() as u64;
                 let _ = sender.send_heartbeat(source_us, |d| send_datagram!(d));
                 heartbeat_timer = Instant::now();
-            }
-
-            // ── Periodic game-announce re-send ───────────────────────────────────
-            if game_id != u8::MAX && announce_timer.elapsed() >= ANNOUNCE_INTERVAL {
-                let _ = sender.send_game_announce(game_id, |d| send_datagram!(d));
-                announce_timer = Instant::now();
             }
 
             // ── Reconnect / game-switch detection ─────────────────────────────────

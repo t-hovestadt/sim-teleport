@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ac-teleport"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "clap",
  "ctrlc",
@@ -493,7 +493,7 @@ dependencies = [
 
 [[package]]
 name = "sim-teleport"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "ac-teleport",
  "anyhow",

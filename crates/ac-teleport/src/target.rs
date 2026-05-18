@@ -163,6 +163,15 @@ impl MapMode {
         };
         &slice[..n.min(slice.len())]
     }
+
+    // DIAGNOSTIC: read the first `n` bytes of the EVO graphics map.
+    fn evo_graphics_peek(&self, n: usize) -> &[u8] {
+        let slice: &[u8] = match self {
+            Self::Single(set) => set.maps[1].as_ref().map_or(&[], |m| m.as_slice()),
+            Self::Dual { evo, .. } => evo.maps[1].as_ref().map_or(&[], |m| m.as_slice()),
+        };
+        &slice[..n.min(slice.len())]
+    }
 }
 
 // ── Main run ──────────────────────────────────────────────────────────────────
@@ -257,6 +266,11 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
     let mut stats = Stats::new("target");
     let mut seq_start: Option<Instant> = None;
     let mut first_frame_logged = false;
+    // Track whether a game announce has been received, and which game_id.
+    // Used to deduplicate announces (source may resend on reconnect) and to
+    // gate on_first_data so we don't fire it before we know which game is active.
+    let mut game_announced = false;
+    let mut last_announced_game_id: Option<u8> = None;
 
     loop {
         if shutdown.try_recv().is_ok() {
@@ -284,6 +298,13 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                     if let Some(bytes) = assembled {
                         if let Some(&game_id) = bytes.first() {
                             println!("[DIAG] PAGE_GAME_ANNOUNCE: game_id={game_id}"); // DIAGNOSTIC
+                                                                                      // Deduplicate: skip if this is the same game_id as before to
+                                                                                      // avoid re-triggering switchgame/stub respawn on reconnect.
+                            if last_announced_game_id == Some(game_id) {
+                                continue;
+                            }
+                            last_announced_game_id = Some(game_id);
+                            game_announced = true;
                             if let Some(cb) = &args.on_game_announce {
                                 cb(game_id);
                             }
@@ -342,15 +363,22 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                             }
                             let write_len = n.min(map_size);
                             map_mode.write_page(page_idx, &decomp_buf[..write_len]);
-                            // DIAGNOSTIC: print first 32 bytes of acevo_pmf_physics every 5s.
+                            // DIAGNOSTIC: print first 32 bytes of EVO physics + graphics every 5s.
                             if last_hex_dump.elapsed() >= Duration::from_secs(5) {
-                                let peek = map_mode.evo_physics_peek(32);
-                                let hex = peek
+                                let phys_peek = map_mode.evo_physics_peek(32);
+                                let phys_hex = phys_peek
                                     .iter()
                                     .map(|b| format!("{b:02x}"))
                                     .collect::<Vec<_>>()
                                     .join(" ");
-                                println!("[DIAG] acevo_pmf_physics[0..32]: {hex}");
+                                println!("[DIAG] acevo_pmf_physics[0..32]: {phys_hex}");
+                                let gfx_peek = map_mode.evo_graphics_peek(32);
+                                let gfx_hex = gfx_peek
+                                    .iter()
+                                    .map(|b| format!("{b:02x}"))
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
+                                println!("[DIAG] acevo_pmf_graphics[0..32]: {gfx_hex}");
                                 last_hex_dump = Instant::now();
                             }
                             Some((compressed_len, n))
@@ -370,8 +398,13 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                         println!("[AC Teleport] Tip: if SimHub shows no data, enable the Assetto Corsa plugin:");
                         println!("[AC Teleport]   SimHub > Settings > In-game apps tab > Assetto Corsa > enable");
                         first_frame_logged = true;
-                        if let Some(cb) = &args.on_first_data {
-                            cb();
+                        // Only fire on_first_data after a game announce has been received.
+                        // If we fire before the announce, sim-teleport defaults to AC1 and
+                        // loads the wrong SimHub game profile — causing switchgame oscillation.
+                        if game_announced {
+                            if let Some(cb) = &args.on_first_data {
+                                cb();
+                            }
                         }
                     }
                     if let Some(start) = seq_start.take() {

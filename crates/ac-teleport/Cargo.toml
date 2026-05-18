@@ -1,6 +1,6 @@
 [package]
 name = "ac-teleport"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 description = "Stream Assetto Corsa / AC EVO telemetry to a remote SimHub PC"
 
