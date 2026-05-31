@@ -266,6 +266,8 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
     let mut stats = Stats::new("target");
     let mut seq_start: Option<Instant> = None;
     let mut first_frame_logged = false;
+    let mut first_data_at: Option<Instant> = None;
+    let mut on_first_fired = false;
     // Track whether a game announce has been received, and which game_id.
     // Used to deduplicate announces (source may resend on reconnect) and to
     // gate on_first_data so we don't fire it before we know which game is active.
@@ -398,12 +400,27 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                         println!("[AC Teleport] Tip: if SimHub shows no data, enable the Assetto Corsa plugin:");
                         println!("[AC Teleport]   SimHub > Settings > In-game apps tab > Assetto Corsa > enable");
                         first_frame_logged = true;
-                        // Only fire on_first_data after a game announce has been received.
-                        // If we fire before the announce, sim-teleport defaults to AC1 and
-                        // loads the wrong SimHub game profile — causing switchgame oscillation.
+                        first_data_at = Some(Instant::now());
+                        // Fast path: fire immediately if the game announce already arrived.
                         if game_announced {
                             if let Some(cb) = &args.on_first_data {
                                 cb();
+                            }
+                            on_first_fired = true;
+                        }
+                    }
+
+                    // Fallback: data flowing for 2 s with no announce — fire on_first_data
+                    // so AC still starts (orchestrator defaults to AC1).  With periodic
+                    // re-announces from the source this path will rarely trigger.
+                    if !on_first_fired && !game_announced {
+                        if let Some(t) = first_data_at {
+                            if t.elapsed() >= Duration::from_secs(2) {
+                                println!("[AC Teleport] No game announce after 2s — defaulting");
+                                if let Some(cb) = &args.on_first_data {
+                                    cb();
+                                }
+                                on_first_fired = true;
                             }
                         }
                     }
@@ -441,6 +458,8 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                             );
                             maps = None;
                             first_frame_logged = false;
+                            first_data_at = None;
+                            on_first_fired = false;
                             if let Some(cb) = &args.on_stale {
                                 cb();
                             }
@@ -448,6 +467,8 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                         Some(MapMode::Dual { .. }) => {
                             // Dual mode: keep maps alive (already zeroed above).
                             first_frame_logged = false;
+                            first_data_at = None;
+                            on_first_fired = false;
                             if let Some(cb) = &args.on_stale {
                                 cb();
                             }

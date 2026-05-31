@@ -18,6 +18,7 @@ const DETECT_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
 const STATIC_RESEND_INTERVAL: Duration = Duration::from_secs(10);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
+const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(1);
 const STATIC_CHANGE_BYTES: usize = 100;
 const FORCED_GAME_HINT_SECS: u64 = 30;
 
@@ -128,6 +129,7 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
             .checked_sub(STATIC_RESEND_INTERVAL)
             .unwrap_or(Instant::now());
         let mut heartbeat_timer = Instant::now();
+        let mut announce_timer = Instant::now();
         let mut last_nonzero_tick = Instant::now();
 
         let tick = Duration::from_micros(1_000_000 / args.poll_rate.max(1) as u64);
@@ -241,6 +243,15 @@ pub fn run(args: SourceArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                 let source_us = tick_start.elapsed().as_micros() as u64;
                 let _ = sender.send_heartbeat(source_us, |d| send_datagram!(d));
                 heartbeat_timer = Instant::now();
+            }
+
+            // ── Periodic game-announce re-send ────────────────────────────────────
+            // A target that joins late or drops the initial announce needs a second
+            // chance. The target deduplicates by game_id (last_announced_game_id), so
+            // resending the same id causes no switchgame oscillation.
+            if game_id != u8::MAX && announce_timer.elapsed() >= ANNOUNCE_INTERVAL {
+                let _ = sender.send_game_announce(game_id, |d| send_datagram!(d));
+                announce_timer = Instant::now();
             }
 
             // ── Reconnect / game-switch detection ─────────────────────────────────
