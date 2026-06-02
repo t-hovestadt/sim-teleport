@@ -401,13 +401,16 @@ pub fn run(args: TargetArgs, shutdown: mpsc::Receiver<()>) -> std::io::Result<()
                         println!("[AC Teleport]   SimHub > Settings > In-game apps tab > Assetto Corsa > enable");
                         first_frame_logged = true;
                         first_data_at = Some(Instant::now());
-                        // Fast path: fire immediately if the game announce already arrived.
-                        if game_announced {
-                            if let Some(cb) = &args.on_first_data {
-                                cb();
-                            }
-                            on_first_fired = true;
+                        // Fire on_first_data unconditionally on the first assembled frame —
+                        // same as iRacing Teleport. This is what makes the AC target start
+                        // and switch SimHub. The game announce (if/when it arrives) only
+                        // CORRECTS the active game via on_game_announce; it must never be a
+                        // precondition for starting, or a missed/late announce silently
+                        // strands the target with data flowing but SimHub never switched.
+                        if let Some(cb) = &args.on_first_data {
+                            cb();
                         }
+                        on_first_fired = true;
                     }
 
                     // Fallback: data flowing for 2 s with no announce — fire on_first_data
