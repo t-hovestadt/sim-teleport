@@ -56,6 +56,8 @@ pub struct AppsConfig {
     pub busy_wait: bool,
     #[serde(default)]
     pub fanalab: bool,
+    #[serde(default)]
+    pub write_ibt: bool,
     #[serde(default = "default_relay_port_offset")]
     pub relay_port_offset: u16,
 }
@@ -167,6 +169,7 @@ impl Default for Config {
                 high_priority: false,
                 busy_wait: false,
                 fanalab: false,
+                write_ibt: false,
                 relay_port_offset: 10000,
             },
             advanced: AdvancedConfig::default(),
@@ -226,6 +229,8 @@ high_priority = {high_priority}
 busy_wait = {busy_wait}
 # Enable FanaLab shared-memory output on the target PC
 fanalab = {fanalab}
+# Write iRacing .ibt telemetry files on the target PC (for disk-based tools like Garage 61)
+write_ibt = {write_ibt}
 # Port offset for Sim Relay: target listens on (game_port+offset), SimHub reads game_port.
 # Avoids binding conflict between sim-relay and SimHub on the target PC. Default 10000.
 relay_port_offset = {relay_port_offset}
@@ -264,6 +269,7 @@ ac = "{ac_code}"
         high_priority = config.apps.high_priority,
         busy_wait = config.apps.busy_wait,
         fanalab = config.apps.fanalab,
+        write_ibt = config.apps.write_ibt,
         relay_port_offset = config.apps.relay_port_offset,
         stale_timeout = config.advanced.stale_timeout_secs,
         reconnect_timeout = config.advanced.reconnect_timeout_secs,

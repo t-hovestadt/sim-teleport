@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "sim-teleport"
-version = "0.3.9"
+version = "0.3.10"
 edition = "2021"
 description = "Unified launcher for iRacing Teleport, AC Teleport, and Sim Relay"
 

@@ -218,6 +218,7 @@ fn spawn_teleport_target(
                     bind: format!("0.0.0.0:{}", config.ports.iracing_teleport),
                     unicast: config.network.unicast,
                     fanalab: config.apps.fanalab,
+                    write_ibt: config.apps.write_ibt,
                     high_priority: config.apps.high_priority,
                     busy_wait: config.apps.busy_wait,
                     on_first_data,

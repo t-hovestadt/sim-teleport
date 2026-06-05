@@ -116,6 +116,9 @@ enum Cmd {
         /// Enable FanaLab shared-memory output.
         #[arg(long)]
         fanalab: bool,
+        /// Write iRacing .ibt telemetry files on the target PC (for Garage 61 etc.).
+        #[arg(long)]
+        write_ibt: bool,
         /// Port offset for Sim Relay (default 10000). Target listens on (game_port+offset), forwards to game_port.
         #[arg(long, value_name = "N")]
         port_offset: Option<u16>,
@@ -168,6 +171,7 @@ fn main() {
                     no_ac: false,
                     no_relay: false,
                     fanalab: false,
+                    write_ibt: false,
                     port_offset: None,
                 }
             } else {
@@ -236,6 +240,7 @@ fn main() {
             no_ac,
             no_relay,
             fanalab,
+            write_ibt,
             port_offset,
         } => run_target(
             source,
@@ -248,6 +253,7 @@ fn main() {
             no_ac,
             no_relay,
             fanalab,
+            write_ibt,
             port_offset,
         ),
         Cmd::Setup => run_setup(),
@@ -365,6 +371,7 @@ fn run_target(
     no_ac: bool,
     no_relay: bool,
     fanalab: bool,
+    write_ibt: bool,
     port_offset: Option<u16>,
 ) {
     let log = logger::Logger::open().unwrap_or_else(|e| {
@@ -407,6 +414,9 @@ fn run_target(
     }
     if fanalab {
         cfg.apps.fanalab = true;
+    }
+    if write_ibt {
+        cfg.apps.write_ibt = true;
     }
     if let Some(o) = port_offset {
         cfg.apps.relay_port_offset = o;

@@ -31,6 +31,8 @@ sim_relay_enabled = true
 high_priority = false
 busy_wait = false
 fanalab = false
+# Write iRacing .ibt telemetry files on the target PC (for disk-based tools like Garage 61)
+write_ibt = false
 # Port offset for Sim Relay: target listens on (game_port+offset), SimHub reads game_port.
 # Avoids binding conflict between sim-relay and SimHub on the target PC. Default 10000.
 relay_port_offset = 10000
